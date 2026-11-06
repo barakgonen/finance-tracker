@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { categoryBreakdown, largestTransactions, merchantBreakdown, monthInsights, monthlySeries, recurringSeries, upcoming } from "@ft/analytics";
+import { categoryBreakdown, healthScore, largestTransactions, merchantBreakdown, monthInsights, monthlySeries, recurringSeries, upcoming } from "@ft/analytics";
 import { InsightCard } from "@/components/InsightCard";
 import { describeInsight } from "@/lib/insight-text";
 import { BarList, ColumnChart, SERIES } from "@/components/charts";
@@ -42,9 +42,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       pending: await reviewCount(tx, viewer.householdId),
       insights: await monthInsights(tx, period.filters, period.month),
       recurring: await recurringSeries(tx, period.filters, period.month),
+      health: await healthScore(tx, period.filters, period.month),
     };
   });
-  const { period, series, categories, merchants, largest, pending, insights, recurring } = data;
+  const { period, series, categories, merchants, largest, pending, insights, recurring, health } = data;
   const today = new Date().toISOString().slice(0, 10);
   const soon = upcoming(recurring, `${period.month}-28` < today ? `${period.month}-28` : today, 14).filter((s) => s.direction === "out");
   const cur = series[series.length - 1]!;
@@ -86,6 +87,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               delta={rate !== null && prevRate !== null ? { text: `${rate >= prevRate ? "▲" : "▼"} ${Math.abs(Math.round((rate - prevRate) * 100))} נק׳`, dir: rate >= prevRate ? "up" : "down" } : undefined}
               upIsGood
             />
+            <Link href={periodHref("/health", period)} className="card stack" style={{ "--gap": "6px", textDecoration: "none", color: "inherit" } as React.CSSProperties}>
+              <span className="muted small">בריאות פיננסית</span>
+              <span className="kpi">{health.total === null ? "—" : <>{health.total}<span className="muted small"> / 100</span></>}</span>
+              <span className="small" style={{ color: "var(--accent)" }}>{health.total === null ? "אין עדיין מספיק נתונים" : "איך זה מחושב?"}</span>
+            </Link>
           </section>
 
           {insights.length > 0 && (

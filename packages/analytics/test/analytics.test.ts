@@ -175,3 +175,13 @@ describe("income stability", () => {
     expect(incomeStability([100n, 0n, 100n])).toBeNull();
   });
 });
+
+describe("health score", () => {
+  it("needs three complete months before giving an overall score", async () => {
+    const { healthScore } = await import("../src/index.js");
+    // this household has income only in October
+    const r = await q((tx) => healthScore(tx, F(), "2026-10"));
+    expect(r).toMatchObject({ total: null, insufficient: "too_few_months", monthsUsed: 1 });
+    expect(r.dimensions.find((d) => d.key === "emergency_fund")!.score).not.toBeNull(); // the bank balance is known
+  });
+});

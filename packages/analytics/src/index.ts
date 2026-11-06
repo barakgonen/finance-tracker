@@ -360,3 +360,4 @@ export async function latestMonth(db: Db, householdId: string): Promise<string |
   return r?.d ? r.d.slice(0, 7) : null;
 }
 export * from "./intelligence.js";
+export * from "./health.js";
