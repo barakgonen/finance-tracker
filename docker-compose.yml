@@ -5,10 +5,16 @@ services:
     environment:
       POSTGRES_USER: finance
       POSTGRES_DB: finance
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env (run ./start.sh)}
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # TCP rather than the socket: during first-time init the image runs a socket-only server
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U finance -d finance"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
 volumes:
   pgdata:
