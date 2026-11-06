@@ -22,8 +22,10 @@ export function percent(ratio: number): string {
 export function compactMoney(minor: bigint | number): string {
   const v = Math.abs(Number(minor) / 100);
   const sign = Number(minor) < 0 ? "−" : "";
-  if (v >= 1_000_000) return `${sign}₪${(v / 1_000_000).toFixed(v >= 10_000_000 ? 0 : 1)}M`;
-  if (v >= 1000) return `${sign}₪${(v / 1000).toFixed(v >= 10_000 ? 0 : 1)}K`;
+  // one decimal when it carries information (gridlines fall on values like 12,500)
+  const short = (x: number) => x.toFixed(1).replace(/\.0$/, "");
+  if (v >= 1_000_000) return `${sign}₪${short(v / 1_000_000)}M`;
+  if (v >= 1000) return `${sign}₪${short(v / 1000)}K`;
   return `${sign}₪${Math.round(v)}`;
 }
 
@@ -40,4 +42,12 @@ export function monthName(month: string, short = false): string {
   const [y, m] = month.split("-").map(Number) as [number, number];
   const name = HE_MONTHS[m - 1]!;
   return short ? name.slice(0, 3) + "׳" : `${name} ${y}`;
+}
+
+/** "1,250.50" / "1250" / "₪1,250" from a form -> agorot; null when empty or invalid. */
+export function parseShekels(input: FormDataEntryValue | string | null | undefined): bigint | null {
+  const s = String(input ?? "").replace(/[₪,\s]/g, "");
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
+  const [whole, frac = ""] = s.split(".");
+  return BigInt(whole!) * 100n + BigInt((frac + "00").slice(0, 2));
 }

@@ -39,8 +39,8 @@ describe("computeHealth", () => {
     expect(by.debt).toMatchObject({ value: 0, score: 100 });
     expect(by.emergency_fund).toMatchObject({ value: 3, score: 50 });
     expect(by.goals).toMatchObject({ score: null, missing: "no_goals" });
-    // (100*25 + 50*15 + 100*15 + 100*10 + 100*10 + 100*10 + 50*15) / 100
-    expect(r.total).toBe(85);
+    // goals have no data, so: (100*20 + 50*15 + 100*15 + 100*10 + 100*10 + 100*10 + 50*10) / 90
+    expect(r.total).toBe(86);
   });
 
   it("refuses an overall score with fewer than three complete months", () => {
@@ -53,8 +53,8 @@ describe("computeHealth", () => {
     const r = computeHealth(inputs({ liquidBalanceMinor: null, hasBankData: false }));
     expect(r.dimensions.find((d) => d.key === "emergency_fund")).toMatchObject({ score: null, missing: "no_balance" });
     expect(r.dimensions.find((d) => d.key === "debt")).toMatchObject({ score: null, missing: "no_bank_data" });
-    // (100*25 + 50*15 + 100*15 + 100*10 + 100*10) / 75
-    expect(r.total).toBe(90);
+    // (100*20 + 50*15 + 100*15 + 100*10 + 100*10) / 70
+    expect(r.total).toBe(89);
   });
 
   it("penalizes deficits, unstable months, debt and volatile spending, and names what to fix", () => {
@@ -74,6 +74,12 @@ describe("computeHealth", () => {
     const r = computeHealth(inputs({ months: inputs().months.map((m) => ({ ...m, unreviewedMinor: 900000n })) }));
     expect(r.confidence).toBe("low");
     expect(r.unreviewedShare).toBeCloseTo(0.5, 2);
+  });
+
+  it("counts goal progress once there are goals", () => {
+    const r = computeHealth(inputs({ goalProgress: 0.5 }));
+    expect(r.dimensions.find((d) => d.key === "goals")).toMatchObject({ score: 50, value: 0.5 });
+    expect(r.total).toBe(83); // (7750 + 50*10) / 100
   });
 
   it("the default weights of scored dimensions sum to 100", () => {

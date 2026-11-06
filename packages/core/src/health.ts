@@ -28,14 +28,14 @@ export const HEALTH_CONFIG = {
   /** above this share of unreviewed (guessed) amounts, confidence is low */
   unreviewedWarnShare: 0.25,
   dimensions: {
-    savings_rate: { weight: 25, worst: 0, best: 0.2 }, // share of income left at month end
+    savings_rate: { weight: 20, worst: 0, best: 0.2 }, // share of income left at month end
     expense_ratio: { weight: 15, worst: 1, best: 0.6 }, // spending / income
     cashflow_stability: { weight: 15, worst: 0.5, best: 1 }, // share of months ending positive
     fixed_costs: { weight: 10, worst: 0.7, best: 0.3 }, // recurring commitments / income
     spending_consistency: { weight: 10, worst: 0.5, best: 0.1 }, // coefficient of variation of monthly spending
     debt: { weight: 10, worst: 0.4, best: 0 }, // loan and mortgage payments / income
-    emergency_fund: { weight: 15, worst: 0, best: 6 }, // months of spending covered by the bank balance
-    goals: { weight: 0, worst: 0, best: 1 }, // average goal progress (no goals feature yet: weight 0)
+    emergency_fund: { weight: 10, worst: 0, best: 6 }, // months of spending covered by the bank balance
+    goals: { weight: 10, worst: 0, best: 1 }, // average progress of active goals
   } satisfies Record<HealthDimensionKey, DimensionConfig>,
 };
 

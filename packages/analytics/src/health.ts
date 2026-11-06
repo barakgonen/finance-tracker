@@ -1,9 +1,10 @@
 // Gathers the inputs for the health score (see computeHealth in @ft/core) over a 6-month window.
-import { and, desc, eq, gte, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { computeHealth, type HealthResult } from "@ft/core";
-import { account, balanceSnapshot, transaction, type Db } from "@ft/db";
+import { account, transaction, type Db } from "@ft/db";
 import { monthlySeries, type Filters } from "./index.js";
 import { recurringSeries } from "./intelligence.js";
+import { averageGoalProgress, liquidBalance } from "./planning.js";
 import { monthRange, shiftMonth } from "./months.js";
 
 const WINDOW = 6;
@@ -39,24 +40,7 @@ export async function healthScore(db: Db, f: Filters, month: string): Promise<He
   const recurring = await recurringSeries(db, f, month);
   const fixed = recurring.filter((s) => s.active && s.direction === "out").reduce((a, s) => a + s.monthlyMinor, 0n);
 
-  // latest known balance of each bank account by the end of the month (the member's own accounts in an individual view)
-  const banks = await db
-    .select({ id: account.id })
-    .from(account)
-    .where(and(eq(account.householdId, f.householdId), eq(account.type, "bank"), f.memberId ? eq(account.ownerMemberId, f.memberId) : undefined));
-  let liquid: bigint | null = null;
-  if (banks.length > 0) {
-    const lastDay = new Date(Date.parse(to) - 86_400_000).toISOString().slice(0, 10);
-    for (const b of banks) {
-      const [snap] = await db
-        .select({ balance: balanceSnapshot.balance })
-        .from(balanceSnapshot)
-        .where(and(eq(balanceSnapshot.accountId, b.id), lte(balanceSnapshot.asOf, lastDay)))
-        .orderBy(desc(balanceSnapshot.asOf), desc(balanceSnapshot.createdAt))
-        .limit(1);
-      if (snap) liquid = (liquid ?? 0n) + snap.balance;
-    }
-  }
+  const liquid = await liquidBalance(db, f, month);
 
   return computeHealth({
     months: series.map((m) => ({
@@ -69,7 +53,7 @@ export async function healthScore(db: Db, f: Filters, month: string): Promise<He
     fixedMonthlyMinor: fixed,
     liquidBalanceMinor: liquid,
     hasBankData: (bankRow?.n ?? 0) > 0,
-    goalProgress: null,
+    goalProgress: await averageGoalProgress(db, f, month),
   });
 }
 

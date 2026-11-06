@@ -35,6 +35,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             { href: "/recurring", label: "חיובים קבועים" },
             { href: "/insights", label: "תובנות" },
             { href: "/health", label: "בריאות פיננסית" },
+            { href: "/budgets", label: "תקציבים" },
+            { href: "/goals", label: "יעדים" },
+            { href: "/forecast", label: "תחזית" },
             { href: "/import", label: t.nav.import, separatorBefore: true },
             { href: "/settings/accounts", label: t.nav.accounts },
           ]}

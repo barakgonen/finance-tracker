@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { categoryBreakdown, healthScore, largestTransactions, merchantBreakdown, monthInsights, monthlySeries, recurringSeries, upcoming } from "@ft/analytics";
+import { budgetsWithStatus, categoryBreakdown, healthScore, largestTransactions, merchantBreakdown, monthInsights, monthlySeries, recurringSeries, upcoming } from "@ft/analytics";
 import { InsightCard } from "@/components/InsightCard";
 import { describeInsight } from "@/lib/insight-text";
+import { BUDGET_STATE } from "@/lib/planning-text";
 import { BarList, ColumnChart, SERIES } from "@/components/charts";
 import { ScopeBar } from "@/components/ScopeBar";
 import { householdScope, requireViewer } from "@/lib/auth";
@@ -43,9 +44,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       insights: await monthInsights(tx, period.filters, period.month),
       recurring: await recurringSeries(tx, period.filters, period.month),
       health: await healthScore(tx, period.filters, period.month),
+      budgets: await budgetsWithStatus(tx, period.filters, period.month),
     };
   });
-  const { period, series, categories, merchants, largest, pending, insights, recurring, health } = data;
+  const { period, series, categories, merchants, largest, pending, insights, recurring, health, budgets } = data;
+  const alerts = budgets.filter((b) => b.status.state !== "ok");
   const today = new Date().toISOString().slice(0, 10);
   const soon = upcoming(recurring, `${period.month}-28` < today ? `${period.month}-28` : today, 14).filter((s) => s.direction === "out");
   const cur = series[series.length - 1]!;
@@ -157,6 +160,22 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                   ))}
                 </ul>
               </section>
+              {alerts.length > 0 && (
+                <section className="card stack">
+                  <div className="row spread">
+                    <h2>תקציבים שדורשים תשומת לב</h2>
+                    <Link className="small" href={periodHref("/budgets", period)}>כל התקציבים</Link>
+                  </div>
+                  <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, "--gap": "10px" } as React.CSSProperties}>
+                    {alerts.map((b) => (
+                      <li key={b.id} className="row spread small">
+                        <span>{b.categoryName} <span className={`chip ${BUDGET_STATE[b.status.state].tone}`}>{BUDGET_STATE[b.status.state].icon} {BUDGET_STATE[b.status.state].label}</span></span>
+                        <span className="num">{money(b.status.spentMinor, { whole: true })} / {money(b.status.limitMinor, { whole: true })}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
               {soon.length > 0 && (
                 <section className="card stack">
                   <div className="row spread">

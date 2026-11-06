@@ -9,3 +9,4 @@ export * from "./classify.js";
 export * from "./recurring.js";
 export * from "./insights.js";
 export * from "./health.js";
+export * from "./planning.js";

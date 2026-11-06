@@ -60,6 +60,8 @@ export const classificationSource = pgEnum("classification_source", [
 ]);
 export const categoryType = pgEnum("category_type", ["expense", "income"]);
 export const aliasMatch = pgEnum("alias_match", ["exact", "prefix", "regex"]);
+export const goalType = pgEnum("goal_type", ["save_amount", "savings_rate", "reduce_category"]);
+export const goalStatus = pgEnum("goal_status", ["active", "archived"]);
 
 export const household = pgTable("household", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -379,4 +381,50 @@ export const auditLog = pgTable(
     createdAt: timestamps.createdAt,
   },
   (t) => [index("audit_log_entity_idx").on(t.entity, t.entityId)],
+);
+
+/** A monthly spending limit for a category, for the household or one member. */
+export const budget = pgTable(
+  "budget",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => category.id),
+    // null = the whole household
+    memberId: uuid("member_id").references(() => householdMember.id),
+    monthlyLimit: money("monthly_limit").notNull(),
+    // warn once spending reaches this share of the limit
+    alertRatio: real("alert_ratio").notNull().default(0.8),
+    ...timestamps,
+  },
+  (t) => [index("budget_household_idx").on(t.householdId)],
+);
+
+/** A financial goal; progress is computed from the ledger, never stored. */
+export const goal = pgTable(
+  "goal",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    name: text("name").notNull(),
+    type: goalType("type").notNull(),
+    // save_amount
+    targetAmount: money("target_amount"),
+    deadline: date("deadline"),
+    // savings_rate (0..1)
+    targetRate: real("target_rate"),
+    // reduce_category: cut `categoryId` spending by `reducePct` (0..1) against `baselineMonthly`
+    categoryId: uuid("category_id").references(() => category.id),
+    reducePct: real("reduce_pct"),
+    baselineMonthly: money("baseline_monthly"),
+    // first month that counts (YYYY-MM)
+    startMonth: char("start_month", { length: 7 }).notNull(),
+    // null = shared household goal
+    memberId: uuid("member_id").references(() => householdMember.id),
+    status: goalStatus("status").notNull().default("active"),
+    ...timestamps,
+  },
+  (t) => [index("goal_household_idx").on(t.householdId)],
 );
