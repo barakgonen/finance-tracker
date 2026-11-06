@@ -1,0 +1,340 @@
+import { sql } from "drizzle-orm";
+import {
+  bigint,
+  boolean,
+  char,
+  date,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  real,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
+
+// Money columns are integer minor units (agorot) + ISO currency. Never floats.
+const money = (name: string) => bigint(name, { mode: "bigint" });
+
+const timestamps = {
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+};
+
+const householdRef = () =>
+  uuid("household_id")
+    .notNull()
+    .references(() => household.id);
+
+export const memberRole = pgEnum("member_role", ["admin", "member", "viewer"]);
+export const accountType = pgEnum("account_type", ["bank", "credit_card", "savings", "investment", "cash"]);
+export const visibility = pgEnum("visibility", ["shared", "private"]);
+export const importStatus = pgEnum("import_status", ["uploaded", "parsed", "failed", "committed", "discarded"]);
+export const txStatus = pgEnum("tx_status", ["pending", "posted"]);
+export const txKind = pgEnum("tx_kind", [
+  "expense",
+  "income",
+  "refund",
+  "reversal",
+  "internal_transfer",
+  "card_settlement",
+  "savings_investment",
+  "fee",
+  "cash_withdrawal",
+  "p2p_transfer",
+  "loan_payment",
+]);
+export const classificationSource = pgEnum("classification_source", [
+  "manual",
+  "rule",
+  "merchant",
+  "dictionary",
+  "neighbour",
+  "ai",
+  "settlement",
+  "none",
+]);
+export const categoryType = pgEnum("category_type", ["expense", "income"]);
+export const aliasMatch = pgEnum("alias_match", ["exact", "prefix", "regex"]);
+
+export const household = pgTable("household", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  baseCurrency: char("base_currency", { length: 3 }).notNull().default("ILS"),
+  ...timestamps,
+});
+
+export const appUser = pgTable("app_user", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  totpSecretEnc: text("totp_secret_enc"),
+  locale: text("locale").notNull().default("he"),
+  ...timestamps,
+});
+
+export const householdMember = pgTable(
+  "household_member",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    userId: uuid("user_id").references(() => appUser.id),
+    displayName: text("display_name").notNull(),
+    role: memberRole("role").notNull().default("member"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("household_member_user_uq").on(t.householdId, t.userId)],
+);
+
+export const account = pgTable("account", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: householdRef(),
+  type: accountType("type").notNull(),
+  institution: text("institution").notNull(),
+  name: text("name").notNull(),
+  numberLast4: char("number_last4", { length: 4 }),
+  currency: char("currency", { length: 3 }).notNull().default("ILS"),
+  // null owner = shared account
+  ownerMemberId: uuid("owner_member_id").references(() => householdMember.id),
+  visibility: visibility("visibility").notNull().default("shared"),
+  // credit cards: the bank account their monthly bill is debited from
+  settlesToAccountId: uuid("settles_to_account_id").references((): AnyPgColumn => account.id),
+  // false for cards whose statements are never imported: their bank bill debit then counts
+  // as one unitemized expense instead of being excluded as a settlement
+  tracksStatements: boolean("tracks_statements").notNull().default(true),
+  // regex matched against bank debit descriptions to attribute an unmatched bill to this card
+  billDescriptionPattern: text("bill_description_pattern"),
+  ...timestamps,
+});
+
+export const importFile = pgTable(
+  "import_file",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    accountId: uuid("account_id").references(() => account.id),
+    uploadedBy: uuid("uploaded_by").references(() => householdMember.id),
+    fileName: text("file_name").notNull(),
+    sha256: char("sha256", { length: 64 }).notNull(),
+    blobPath: text("blob_path").notNull(), // AES-256-GCM encrypted at rest
+    mimeType: text("mime_type").notNull(),
+    institution: text("institution"),
+    // what the statement says about its account (institution, card last 4, bank account)
+    accountHint: jsonb("account_hint"),
+    // the parser's output (ParsedStatement, bigints as strings); commit works from this
+    parsed: jsonb("parsed"),
+    parser: text("parser"),
+    parserVersion: integer("parser_version"),
+    status: importStatus("status").notNull().default("uploaded"),
+    // { statementTotalMinor, parsedTotalMinor, diffMinor, ok, overriddenBy? }
+    reconciliation: jsonb("reconciliation"),
+    stats: jsonb("stats"),
+    error: text("error"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("import_file_sha_uq").on(t.householdId, t.sha256)],
+);
+
+export const rawRow = pgTable(
+  "raw_row",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    importFileId: uuid("import_file_id")
+      .notNull()
+      .references(() => importFile.id),
+    rowIndex: integer("row_index").notNull(),
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [uniqueIndex("raw_row_file_idx_uq").on(t.importFileId, t.rowIndex)],
+);
+
+export const category = pgTable(
+  "category",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    parentId: uuid("parent_id").references((): AnyPgColumn => category.id),
+    type: categoryType("type").notNull(),
+    slug: text("slug").notNull(),
+    nameHe: text("name_he").notNull(),
+    nameEn: text("name_en").notNull(),
+    isSystem: boolean("is_system").notNull().default(false),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("category_slug_uq").on(t.householdId, t.slug)],
+);
+
+export const merchant = pgTable("merchant", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: householdRef(),
+  name: text("name").notNull(),
+  defaultCategoryId: uuid("default_category_id").references(() => category.id),
+  mergedIntoId: uuid("merged_into_id").references((): AnyPgColumn => merchant.id),
+  ...timestamps,
+});
+
+export const merchantAlias = pgTable(
+  "merchant_alias",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    merchantId: uuid("merchant_id")
+      .notNull()
+      .references(() => merchant.id),
+    pattern: text("pattern").notNull(), // normalized description key
+    match: aliasMatch("match").notNull().default("exact"),
+    source: classificationSource("source").notNull(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("merchant_alias_uq").on(t.householdId, t.pattern, t.match)],
+);
+
+export const transaction = pgTable(
+  "transaction",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => account.id),
+    rawRowId: uuid("raw_row_id").references(() => rawRow.id),
+    fingerprint: char("fingerprint", { length: 64 }).notNull(),
+    purchaseDate: date("purchase_date").notNull(),
+    postingDate: date("posting_date"),
+    amount: money("amount").notNull(), // signed: negative = money out
+    currency: char("currency", { length: 3 }).notNull().default("ILS"),
+    originalAmount: money("original_amount"),
+    originalCurrency: char("original_currency", { length: 3 }),
+    descriptionRaw: text("description_raw").notNull(),
+    descriptionNorm: text("description_norm").notNull(),
+    // issuer's own labels, kept so re-classification sees the same inputs as the import did
+    categoryHint: text("category_hint"),
+    typeHint: text("type_hint"),
+    merchantId: uuid("merchant_id").references(() => merchant.id),
+    categoryId: uuid("category_id").references(() => category.id),
+    kind: txKind("kind").notNull().default("expense"),
+    status: txStatus("status").notNull().default("posted"),
+    installmentNo: integer("installment_no"),
+    installmentTotal: integer("installment_total"),
+    installmentOriginalAmount: money("installment_original_amount"),
+    memberId: uuid("member_id").references(() => householdMember.id),
+    isShared: boolean("is_shared").notNull().default(false),
+    classificationSource: classificationSource("classification_source").notNull().default("none"),
+    classificationConfidence: real("classification_confidence"),
+    classificationReason: text("classification_reason"),
+    needsReview: boolean("needs_review").notNull().default(false),
+    reviewReason: text("review_reason"),
+    // manual edits are pinned and never overwritten by reprocessing
+    isManuallyEdited: boolean("is_manually_edited").notNull().default(false),
+    supersededById: uuid("superseded_by_id").references((): AnyPgColumn => transaction.id),
+    settlementGroupId: uuid("settlement_group_id"),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("transaction_fingerprint_uq").on(t.accountId, t.fingerprint),
+    index("transaction_hh_date_idx").on(t.householdId, t.purchaseDate),
+    index("transaction_hh_cat_date_idx").on(t.householdId, t.categoryId, t.purchaseDate),
+    index("transaction_hh_merchant_date_idx").on(t.householdId, t.merchantId, t.purchaseDate),
+    index("transaction_desc_trgm_idx").using("gin", sql`${t.descriptionNorm} gin_trgm_ops`),
+    index("transaction_review_idx").on(t.householdId, t.needsReview),
+  ],
+);
+
+export const transactionSplit = pgTable("transaction_split", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: householdRef(),
+  transactionId: uuid("transaction_id")
+    .notNull()
+    .references(() => transaction.id),
+  amount: money("amount").notNull(),
+  categoryId: uuid("category_id").references(() => category.id),
+  memberId: uuid("member_id").references(() => householdMember.id),
+  ...timestamps,
+});
+
+export const categorizationRule = pgTable("categorization_rule", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: householdRef(),
+  priority: integer("priority").notNull().default(100),
+  // { merchantId?, descriptionRegex?, amountMin?, amountMax?, accountId? }
+  conditions: jsonb("conditions").notNull(),
+  // { categoryId?, kind?, memberId?, isShared? }
+  actions: jsonb("actions").notNull(),
+  createdFromCorrection: boolean("created_from_correction").notNull().default(false),
+  enabled: boolean("enabled").notNull().default(true),
+  ...timestamps,
+});
+
+/** A card bill as printed on an imported statement: the amount the issuer debits from the bank. */
+export const cardBill = pgTable(
+  "card_bill",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    cardAccountId: uuid("card_account_id")
+      .notNull()
+      .references(() => account.id),
+    importFileId: uuid("import_file_id")
+      .notNull()
+      .references(() => importFile.id),
+    postingDate: date("posting_date").notNull(),
+    total: money("total").notNull(), // positive
+    label: text("label").notNull(),
+    ...timestamps,
+  },
+  // the same bill imported as PDF and as XLSX is one bill
+  (t) => [uniqueIndex("card_bill_uq").on(t.cardAccountId, t.postingDate, t.total)],
+);
+
+/** Links a card bill to the bank debit that paid it; that debit is then excluded from spending. */
+export const cardSettlement = pgTable("card_settlement", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: householdRef(),
+  cardBillId: uuid("card_bill_id")
+    .notNull()
+    .unique()
+    .references(() => cardBill.id),
+  bankTransactionId: uuid("bank_transaction_id")
+    .notNull()
+    .unique()
+    .references(() => transaction.id),
+  dayDiff: integer("day_diff").notNull(),
+  ...timestamps,
+});
+
+export const balanceSnapshot = pgTable("balance_snapshot", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: householdRef(),
+  accountId: uuid("account_id")
+    .notNull()
+    .references(() => account.id),
+  asOf: date("as_of").notNull(),
+  balance: money("balance").notNull(),
+  source: text("source").notNull(), // "import" | "manual"
+  ...timestamps,
+});
+
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    actorMemberId: uuid("actor_member_id").references(() => householdMember.id),
+    entity: text("entity").notNull(),
+    entityId: uuid("entity_id").notNull(),
+    action: text("action").notNull(),
+    before: jsonb("before"),
+    after: jsonb("after"),
+    reason: text("reason"),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [index("audit_log_entity_idx").on(t.entity, t.entityId)],
+);

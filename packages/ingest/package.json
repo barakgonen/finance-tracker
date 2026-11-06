@@ -1,0 +1,25 @@
+{
+  "name": "@ft/ingest",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ft/core": "workspace:*",
+    "@ft/db": "workspace:*",
+    "@ft/parsers": "workspace:*",
+    "drizzle-orm": "0.36.4",
+    "postgres": "3.4.5"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "10.16.0",
+    "typescript": "5.6.3",
+    "vitest": "2.1.8"
+  }
+}
