@@ -87,8 +87,8 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
               <tbody>
                 {data.merchants.map((m) => (
                   <tr key={m.merchantId}>
-                    <td><Link href={tx({ merchant: m.merchantId })}>{m.name}</Link></td>
-                    <td className="num">{money(m.minor, { whole: true })}</td>
+                    <td><Link href={`/merchants/${m.merchantId}`}>{m.name}</Link></td>
+                    <td className="num"><Link href={tx({ merchant: m.merchantId })} style={{ color: "inherit" }}>{money(m.minor, { whole: true })}</Link></td>
                     <td className="num">{m.count}</td>
                     <td className="num">{money(m.avgMinor)}</td>
                     <td className="num muted">{money(m.prevMinor, { whole: true })}</td>

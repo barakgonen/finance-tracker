@@ -6,3 +6,5 @@ export * from "./settlement.js";
 export * from "./categories.js";
 export * from "./dictionary.js";
 export * from "./classify.js";
+export * from "./recurring.js";
+export * from "./insights.js";

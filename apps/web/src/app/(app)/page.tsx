@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { categoryBreakdown, largestTransactions, merchantBreakdown, monthlySeries } from "@ft/analytics";
+import { categoryBreakdown, largestTransactions, merchantBreakdown, monthInsights, monthlySeries, recurringSeries, upcoming } from "@ft/analytics";
+import { InsightCard } from "@/components/InsightCard";
+import { describeInsight } from "@/lib/insight-text";
 import { BarList, ColumnChart, SERIES } from "@/components/charts";
 import { ScopeBar } from "@/components/ScopeBar";
 import { householdScope, requireViewer } from "@/lib/auth";
@@ -38,9 +40,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       merchants: await merchantBreakdown(tx, period.filters, period.month, 5),
       largest: await largestTransactions(tx, period.filters, period.month, 5),
       pending: await reviewCount(tx, viewer.householdId),
+      insights: await monthInsights(tx, period.filters, period.month),
+      recurring: await recurringSeries(tx, period.filters, period.month),
     };
   });
-  const { period, series, categories, merchants, largest, pending } = data;
+  const { period, series, categories, merchants, largest, pending, insights, recurring } = data;
+  const today = new Date().toISOString().slice(0, 10);
+  const soon = upcoming(recurring, `${period.month}-28` < today ? `${period.month}-28` : today, 14).filter((s) => s.direction === "out");
   const cur = series[series.length - 1]!;
   const prev = series[series.length - 2]!;
   const rate = cur.incomeMinor > 0n ? Number(cur.netMinor) / Number(cur.incomeMinor) : null;
@@ -81,6 +87,18 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               upIsGood
             />
           </section>
+
+          {insights.length > 0 && (
+            <section className="stack" aria-labelledby="ins-h">
+              <div className="row spread">
+                <h2 id="ins-h">מה כדאי לדעת החודש</h2>
+                <Link className="small" href={periodHref("/insights", period)}>כל התובנות ({insights.length})</Link>
+              </div>
+              <div className="grid">
+                {insights.slice(0, 3).map((i) => <InsightCard key={i.id} view={describeInsight(i, period)} />)}
+              </div>
+            </section>
+          )}
 
           {hasHistory && (
             <section className="card stack">
@@ -127,12 +145,28 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, "--gap": "10px" } as React.CSSProperties}>
                   {merchants.map((m) => (
                     <li key={m.merchantId} className="row spread small">
-                      <Link href={tx({ side: "spending", merchant: m.merchantId })}>{m.name}</Link>
-                      <span className="num">{money(m.minor, { whole: true })} <span className="muted">· {m.count} עסקאות</span></span>
+                      <Link href={`/merchants/${m.merchantId}`}>{m.name}</Link>
+                      <Link href={tx({ side: "spending", merchant: m.merchantId })} className="num" style={{ color: "inherit" }}>{money(m.minor, { whole: true })} <span className="muted">· {m.count} עסקאות</span></Link>
                     </li>
                   ))}
                 </ul>
               </section>
+              {soon.length > 0 && (
+                <section className="card stack">
+                  <div className="row spread">
+                    <h2>חיובים צפויים · 14 יום</h2>
+                    <Link className="small" href={periodHref("/recurring", period)}>הכל</Link>
+                  </div>
+                  <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, "--gap": "10px" } as React.CSSProperties}>
+                    {soon.map((s) => (
+                      <li key={s.key} className="row spread small">
+                        <span>{s.label} <span className="muted">· <span className="num">{date(s.nextDate)}</span></span></span>
+                        <span className="num">{s.confidence === "medium" ? "~" : ""}{money(s.amountMinor, { whole: true })}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
               <Link href="/review" className="card stack" style={{ textDecoration: "none", color: "inherit" }}>
                 <h2>{t.dashboard.review}</h2>
                 <span className="kpi">{pending}</span>

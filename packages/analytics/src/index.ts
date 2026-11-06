@@ -359,3 +359,4 @@ export async function latestMonth(db: Db, householdId: string): Promise<string |
     .where(eq(transaction.householdId, householdId));
   return r?.d ? r.d.slice(0, 7) : null;
 }
+export * from "./intelligence.js";

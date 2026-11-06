@@ -94,7 +94,7 @@ export async function correctTransaction(db: Db & { transaction: <T>(fn: (tx: Db
  * Re-runs classification over transactions that were not manually edited and are not managed
  * by settlement reconciliation (e.g. after rules change or the dictionary improves).
  */
-export async function reclassify(db: Db, householdId: string, filter: { descriptionNorm?: string } = {}): Promise<number> {
+export async function reclassify(db: Db, householdId: string, filter: { descriptionNorm?: string; merchantId?: string } = {}): Promise<number> {
   const maps = await ensureCategories(db, householdId);
   const ctx = await loadClassifierContext(db, householdId, maps);
   const rows = await db
@@ -108,6 +108,7 @@ export async function reclassify(db: Db, householdId: string, filter: { descript
         isNull(transaction.supersededById),
         ne(transaction.classificationSource, "settlement"),
         filter.descriptionNorm !== undefined ? eq(transaction.descriptionNorm, filter.descriptionNorm) : undefined,
+        filter.merchantId !== undefined ? eq(transaction.merchantId, filter.merchantId) : undefined,
       ),
     );
   let changed = 0;
