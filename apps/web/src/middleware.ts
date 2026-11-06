@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // Cheap gate: without a session cookie, app pages go to login. The session itself (expiry,
 // TOTP) is validated server-side by requireViewer() on every page and action.
-const PUBLIC = ["/login", "/setup"];
+const PUBLIC = ["/login", "/setup", "/invite"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

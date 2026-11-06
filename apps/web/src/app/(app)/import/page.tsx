@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireViewer } from "@/lib/auth";
+import { householdScope, requireViewer } from "@/lib/auth";
+import { scope } from "@/lib/db";
 import { messages } from "@/lib/i18n";
 import { accounts, imports } from "@/lib/queries";
 import { uploadAction } from "./actions";
@@ -21,7 +22,10 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
   const { error, existing } = await searchParams;
-  const [accts, history] = await Promise.all([accounts(viewer.householdId), imports(viewer.householdId)]);
+  const [accts, history] = await scope(householdScope(viewer), async (tx) => [
+    await accounts(tx, viewer.householdId),
+    await imports(tx, viewer.householdId),
+  ] as const);
 
   return (
     <>

@@ -3,7 +3,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { appUser, householdMember, session } from "@ft/db";
-import { db } from "./db";
+import { db, scope } from "./db";
 import { env } from "./env";
 import { AttemptLimiter, hashToken, newSessionToken } from "./auth-core";
 
@@ -75,7 +75,10 @@ export async function requireViewer(): Promise<Viewer> {
   if (!s) redirect("/login");
   if (!s.user.totpConfirmedAt) redirect("/setup/totp");
   if (!s.session.totpVerified) redirect("/login/verify");
-  const [member] = await db().select().from(householdMember).where(eq(householdMember.userId, s.user.id));
+  // under RLS a user can read their own membership row before the household is known
+  const [member] = await scope({ userId: s.user.id }, (tx) =>
+    tx.select().from(householdMember).where(eq(householdMember.userId, s.user.id)),
+  );
   if (!member) redirect("/login");
   return {
     userId: s.user.id,
@@ -94,3 +97,13 @@ export async function requireEditor(): Promise<Viewer> {
   if (v.role === "viewer") throw new Error("Read-only members can't make changes");
   return v;
 }
+
+/** Household administration (inviting members) is for admins only. */
+export async function requireAdmin(): Promise<Viewer> {
+  const v = await requireViewer();
+  if (v.role !== "admin") throw new Error("Only a household admin can do this");
+  return v;
+}
+
+/** The viewer's household scope, for scope(). */
+export const householdScope = (v: Viewer) => ({ householdId: v.householdId });

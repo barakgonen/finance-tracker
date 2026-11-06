@@ -1,8 +1,10 @@
 import "server-only";
 import { and, asc, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { INCOME_KINDS, SPENDING_KINDS } from "@ft/core";
-import { account, category, householdMember, importFile, transaction } from "@ft/db";
-import { db } from "./db";
+import { account, category, householdMember, importFile, transaction, type Db } from "@ft/db";
+
+// Every query takes the request's household-scoped transaction (see scope() in ./db): with
+// row-level security, a query outside it would see nothing.
 
 export function monthRange(month: string): { from: string; to: string } {
   const [y, m] = month.split("-").map(Number) as [number, number];
@@ -24,10 +26,10 @@ export interface MonthSummary {
  * Income and spending for a month. Spending is money out of spending kinds net of refunds;
  * transfers, card settlements and savings are excluded. `memberId` narrows to one member.
  */
-export async function monthSummary(householdId: string, month: string, memberId?: string): Promise<MonthSummary> {
+export async function monthSummary(db: Db, householdId: string, month: string, memberId?: string): Promise<MonthSummary> {
   const { from, to } = monthRange(month);
   const kinds = [...SPENDING_KINDS, ...INCOME_KINDS];
-  const rows = await db()
+  const rows = await db
     .select({
       kind: transaction.kind,
       slug: category.slug,
@@ -80,16 +82,16 @@ export async function monthSummary(householdId: string, month: string, memberId?
   };
 }
 
-export async function reviewCount(householdId: string): Promise<number> {
-  const [r] = await db()
+export async function reviewCount(db: Db, householdId: string): Promise<number> {
+  const [r] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(transaction)
     .where(and(eq(transaction.householdId, householdId), eq(transaction.needsReview, true), isNull(transaction.supersededById)));
   return r?.n ?? 0;
 }
 
-export async function reviewItems(householdId: string, limit = 50) {
-  return db()
+export async function reviewItems(db: Db, householdId: string, limit = 50) {
+  return db
     .select({
       tx: transaction,
       accountName: account.name,
@@ -104,20 +106,20 @@ export async function reviewItems(householdId: string, limit = 50) {
     .limit(limit);
 }
 
-export async function categories(householdId: string) {
-  return db().select().from(category).where(eq(category.householdId, householdId)).orderBy(asc(category.type), asc(category.nameHe));
+export async function categories(db: Db, householdId: string) {
+  return db.select().from(category).where(eq(category.householdId, householdId)).orderBy(asc(category.type), asc(category.nameHe));
 }
 
-export async function members(householdId: string) {
-  return db().select().from(householdMember).where(eq(householdMember.householdId, householdId)).orderBy(asc(householdMember.createdAt));
+export async function members(db: Db, householdId: string) {
+  return db.select().from(householdMember).where(eq(householdMember.householdId, householdId)).orderBy(asc(householdMember.createdAt));
 }
 
-export async function accounts(householdId: string) {
-  return db().select().from(account).where(eq(account.householdId, householdId)).orderBy(asc(account.type), asc(account.createdAt));
+export async function accounts(db: Db, householdId: string) {
+  return db.select().from(account).where(eq(account.householdId, householdId)).orderBy(asc(account.type), asc(account.createdAt));
 }
 
-export async function imports(householdId: string, limit = 30) {
-  return db()
+export async function imports(db: Db, householdId: string, limit = 30) {
+  return db
     .select({
       id: importFile.id,
       fileName: importFile.fileName,
@@ -135,8 +137,8 @@ export async function imports(householdId: string, limit = 30) {
 }
 
 /** Most recent month that has transactions, so a fresh install doesn't open on an empty month. */
-export async function latestMonth(householdId: string): Promise<string> {
-  const [r] = await db()
+export async function latestMonth(db: Db, householdId: string): Promise<string> {
+  const [r] = await db
     .select({ d: sql<string | null>`max(${transaction.purchaseDate})` })
     .from(transaction)
     .where(eq(transaction.householdId, householdId));

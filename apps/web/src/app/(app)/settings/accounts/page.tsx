@@ -1,7 +1,12 @@
-import { requireViewer } from "@/lib/auth";
+import { headers } from "next/headers";
+import { pendingInvitations } from "@ft/ingest";
+import { householdScope, requireViewer } from "@/lib/auth";
+import { date } from "@/lib/format";
+import { scope } from "@/lib/db";
 import { messages } from "@/lib/i18n";
 import { accounts, members } from "@/lib/queries";
 import { addAccountAction, updateAccountAction } from "./actions";
+import { addMemberAction, createInviteAction, revokeInviteAction } from "./invite-actions";
 
 const INSTITUTIONS = [
   { id: "leumi", he: "בנק לאומי" },
@@ -88,11 +93,26 @@ function AccountFields({ a, people, banks, t }: { a?: Account; people: Member[];
   );
 }
 
-export default async function AccountsPage({ searchParams }: { searchParams: Promise<{ error?: string; saved?: string }> }) {
+export default async function AccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; saved?: string; invite?: string; member?: string }>;
+}) {
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
-  const { error, saved } = await searchParams;
-  const [people, accts] = await Promise.all([members(viewer.householdId), accounts(viewer.householdId)]);
+  const { error, saved, invite, member: invitedMemberId } = await searchParams;
+  const [people, accts, invites] = await scope(householdScope(viewer), async (tx) => [
+    await members(tx, viewer.householdId),
+    await accounts(tx, viewer.householdId),
+    viewer.role === "admin" ? await pendingInvitations(tx, viewer.householdId) : [],
+  ] as const);
+  const isAdmin = viewer.role === "admin";
+  let inviteLink: string | null = null;
+  if (invite && isAdmin) {
+    const h = await headers();
+    const proto = h.get("x-forwarded-proto") ?? (h.get("host")?.startsWith("localhost") || h.get("host")?.startsWith("127.") ? "http" : "https");
+    inviteLink = `${proto}://${h.get("host")}/invite/${encodeURIComponent(invite)}`;
+  }
   const banks = accts.filter((a) => a.type === "bank");
   const readOnly = viewer.role === "viewer";
   const ownerName = (id: string | null) => people.find((p) => p.id === id)?.displayName ?? t.accounts.sharedOwner;
@@ -103,14 +123,65 @@ export default async function AccountsPage({ searchParams }: { searchParams: Pro
       {error && <div role="alert" className="banner warn">{error === "missing" ? t.auth.invalid : error}</div>}
       {saved && <div role="status" className="banner ok">{t.accounts.saved}</div>}
 
+      {inviteLink && (
+        <div role="status" className="banner ok">
+          <div className="stack" style={{ "--gap": "6px", minInlineSize: 0 } as React.CSSProperties}>
+            <strong>{t.invite.linkTitle.replace("{name}", people.find((p) => p.id === invitedMemberId)?.displayName ?? "")}</strong>
+            <code className="num" data-invite-link style={{ wordBreak: "break-all", userSelect: "all" }}>{inviteLink}</code>
+            <span className="small">{t.invite.linkHint}</span>
+          </div>
+        </div>
+      )}
+
       <section className="card stack">
         <h2>{t.accounts.members}</h2>
         {people.map((p) => (
-          <div key={p.id} className="row spread">
-            <strong>{p.displayName}</strong>
-            <span className="chip">{t.roles[p.role]}{p.userId ? "" : " · טרם הוזמן/ה"}</span>
+          <div key={p.id} className="stack" style={{ "--gap": "8px", borderBlockEnd: "1px solid #eef0f3", paddingBlockEnd: 12 } as React.CSSProperties}>
+            <div className="row spread">
+              <strong>{p.displayName}</strong>
+              <span className="chip">{t.roles[p.role]} · {p.userId ? t.invite.hasLogin : t.invite.noLogin}</span>
+            </div>
+            {isAdmin && !p.userId && (
+              <form action={createInviteAction} className="row" style={{ alignItems: "flex-end" }}>
+                <input type="hidden" name="memberId" value={p.id} />
+                <div className="field-group" style={{ flex: "2 1 220px" }}>
+                  <label htmlFor={`inv-email-${p.id}`}>{t.invite.emailOptional}</label>
+                  <input className="field" id={`inv-email-${p.id}`} name="email" type="email" dir="ltr" />
+                </div>
+                <div className="field-group" style={{ flex: "1 1 140px" }}>
+                  <label htmlFor={`inv-role-${p.id}`}>{t.invite.role}</label>
+                  <select className="field" id={`inv-role-${p.id}`} name="role" defaultValue="member">
+                    {(["member", "viewer", "admin"] as const).map((r) => <option key={r} value={r}>{t.roles[r]}</option>)}
+                  </select>
+                </div>
+                <button className="btn" type="submit">{t.invite.create}</button>
+              </form>
+            )}
           </div>
         ))}
+        {isAdmin && invites.length > 0 && (
+          <div className="stack" style={{ "--gap": "8px" } as React.CSSProperties}>
+            <h2 style={{ fontSize: 15 }}>{t.invite.pending}</h2>
+            {invites.map((i) => (
+              <form key={i.id} action={revokeInviteAction} className="row spread small">
+                <input type="hidden" name="invitationId" value={i.id} />
+                <span>
+                  {people.find((p) => p.id === i.memberId)?.displayName} · {t.roles[i.role]} · {t.invite.expires} <span className="num">{date(i.expiresAt.toISOString().slice(0, 10))}</span>
+                </span>
+                <button className="btn" type="submit">{t.invite.revoke}</button>
+              </form>
+            ))}
+          </div>
+        )}
+        {isAdmin && (
+          <form action={addMemberAction} className="row" style={{ alignItems: "flex-end" }}>
+            <div className="field-group" style={{ flex: "1 1 240px" }}>
+              <label htmlFor="new-member">{t.invite.addMember}</label>
+              <input className="field" id="new-member" name="displayName" required placeholder={t.invite.memberName} />
+            </div>
+            <button className="btn" type="submit">{t.invite.add}</button>
+          </form>
+        )}
       </section>
 
       <section className="card stack">

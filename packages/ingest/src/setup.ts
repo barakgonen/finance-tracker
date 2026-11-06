@@ -5,8 +5,17 @@ import { ensureCategories } from "./context.js";
 import { ImportError } from "./import.js";
 import { reconcileSettlements, type SettlementSummary } from "./settlement.js";
 
-export async function createHousehold(db: Db, name: string, members: { displayName: string; role?: "admin" | "member" | "viewer" }[]) {
-  const [h] = await db.insert(household).values({ name }).returning();
+/**
+ * Creates a household with its members and categories. Under row-level security the caller must
+ * already be scoped to `id` (generate it first), since every insert is checked against it.
+ */
+export async function createHousehold(
+  db: Db,
+  name: string,
+  members: { displayName: string; role?: "admin" | "member" | "viewer" }[],
+  id?: string,
+) {
+  const [h] = await db.insert(household).values({ id, name }).returning();
   const created = await db
     .insert(householdMember)
     .values(members.map((m) => ({ householdId: h!.id, displayName: m.displayName, role: m.role ?? "member" })))

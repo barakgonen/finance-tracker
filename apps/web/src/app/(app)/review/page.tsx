@@ -1,5 +1,6 @@
 import { TRANSACTION_KINDS } from "@ft/core";
-import { requireViewer } from "@/lib/auth";
+import { householdScope, requireViewer } from "@/lib/auth";
+import { scope } from "@/lib/db";
 import { date, money } from "@/lib/format";
 import { messages } from "@/lib/i18n";
 import { categories, members, reviewItems } from "@/lib/queries";
@@ -8,7 +9,11 @@ import { correctAction } from "./actions";
 export default async function ReviewPage() {
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
-  const [items, cats, people] = await Promise.all([reviewItems(viewer.householdId), categories(viewer.householdId), members(viewer.householdId)]);
+  const [items, cats, people] = await scope(householdScope(viewer), async (tx) => [
+    await reviewItems(tx, viewer.householdId),
+    await categories(tx, viewer.householdId),
+    await members(tx, viewer.householdId),
+  ] as const);
   const expenseCats = cats.filter((c) => c.type === "expense");
   const incomeCats = cats.filter((c) => c.type === "income");
   const readOnly = viewer.role === "viewer";

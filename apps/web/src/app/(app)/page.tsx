@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireViewer } from "@/lib/auth";
+import { householdScope, requireViewer } from "@/lib/auth";
+import { scope } from "@/lib/db";
 import { money, percent } from "@/lib/format";
 import { messages } from "@/lib/i18n";
 import { latestMonth, members, monthSummary, reviewCount } from "@/lib/queries";
@@ -16,10 +17,14 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
   const params = await searchParams;
-  const month = /^\d{4}-\d{2}$/.test(params.month ?? "") ? params.month! : await latestMonth(viewer.householdId);
-  const people = await members(viewer.householdId);
-  const view = people.find((p) => p.id === params.view)?.id;
-  const [summary, pending] = await Promise.all([monthSummary(viewer.householdId, month, view), reviewCount(viewer.householdId)]);
+  const { month, people, view, summary, pending } = await scope(householdScope(viewer), async (tx) => {
+    const month = /^\d{4}-\d{2}$/.test(params.month ?? "") ? params.month! : await latestMonth(tx, viewer.householdId);
+    const people = await members(tx, viewer.householdId);
+    const view = people.find((p) => p.id === params.view)?.id;
+    const summary = await monthSummary(tx, viewer.householdId, month, view);
+    const pending = await reviewCount(tx, viewer.householdId);
+    return { month, people, view, summary, pending };
+  });
   const [y, m] = month.split("-").map(Number) as [number, number];
   const rate = summary.incomeMinor > 0n ? Number(summary.netMinor) / Number(summary.incomeMinor) : null;
   const maxCat = summary.categories[0]?.minor ?? 1n;

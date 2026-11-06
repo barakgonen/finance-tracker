@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { sql } from "drizzle-orm";
 import { createDb } from "@ft/db";
 import { runMigrations } from "@ft/db/migrate";
 import type { ParsedStatement, ParsedTransaction } from "@ft/parsers";
@@ -10,6 +11,8 @@ import { BlobStore, type IngestDeps } from "../src/index.js";
 
 export interface Harness {
   deps: IngestDeps;
+  /** a connection as the restricted finance_app role, subject to row-level security */
+  appDb: IngestDeps["db"];
   stop: () => Promise<void>;
 }
 
@@ -17,10 +20,17 @@ export async function startHarness(): Promise<Harness> {
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer("postgres:17").start();
   const { db, close } = createDb(container.getConnectionUri());
   await runMigrations(db);
+  await db.execute(sql.raw("ALTER ROLE finance_app LOGIN PASSWORD 'app-test-pw'"));
+  const appUrl = new URL(container.getConnectionUri());
+  appUrl.username = "finance_app";
+  appUrl.password = "app-test-pw";
+  const app = createDb(appUrl.toString());
   const blobs = new BlobStore(mkdtempSync(join(tmpdir(), "ft-blobs-")), randomBytes(32));
   return {
     deps: { db, blobs },
+    appDb: app.db,
     stop: async () => {
+      await app.close();
       await close();
       await container.stop();
     },

@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { appUser, householdMember } from "@ft/db";
 import { createHousehold } from "@ft/ingest";
-import { db } from "@/lib/db";
+import { randomUUID } from "node:crypto";
+import { db, scope } from "@/lib/db";
 import { env } from "@/lib/env";
 import {
   clientKey,
@@ -37,9 +38,11 @@ export async function setupAction(form: FormData): Promise<void> {
     fail("/setup", "invalid");
   }
   const passwordHash = await hashPassword(password);
-  const userId = await db().transaction(async (tx) => {
+  // under RLS the household's rows can only be written inside its own scope, so the id comes first
+  const householdId = randomUUID();
+  const userId = await scope({ householdId }, async (tx) => {
     const members = [{ displayName, role: "admin" as const }, ...(partnerName ? [{ displayName: partnerName }] : [])];
-    const { members: created } = await createHousehold(tx, householdName, members);
+    const { members: created } = await createHousehold(tx, householdName, members, householdId);
     const [user] = await tx.insert(appUser).values({ email, displayName, passwordHash }).returning({ id: appUser.id });
     await tx.update(householdMember).set({ userId: user!.id }).where(eq(householdMember.id, created[0]!.id));
     return user!.id;

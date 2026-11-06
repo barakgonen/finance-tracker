@@ -1,4 +1,5 @@
-import { requireViewer } from "@/lib/auth";
+import { householdScope, requireViewer } from "@/lib/auth";
+import { scope } from "@/lib/db";
 import { messages } from "@/lib/i18n";
 import { reviewCount } from "@/lib/queries";
 import { logoutAction } from "../(auth)/actions";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
-  const pending = await reviewCount(viewer.householdId);
+  const pending = await scope(householdScope(viewer), (tx) => reviewCount(tx, viewer.householdId));
   return (
     <div className="shell">
       <nav className="sidebar" aria-label={t.nav.main}>

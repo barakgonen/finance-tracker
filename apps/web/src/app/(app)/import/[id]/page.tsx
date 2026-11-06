@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPreview, ImportError } from "@ft/ingest";
-import { requireViewer } from "@/lib/auth";
-import { ingestDeps } from "@/lib/db";
+import { householdScope, requireViewer } from "@/lib/auth";
+import { ingestDeps, scope } from "@/lib/db";
 import { date, money } from "@/lib/format";
 import { messages } from "@/lib/i18n";
 import { accounts, categories } from "@/lib/queries";
@@ -22,14 +22,17 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
   const { error } = await searchParams;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
 
-  let preview;
-  try {
-    preview = await getPreview(ingestDeps(), viewer.householdId, id);
-  } catch (e) {
-    if (e instanceof ImportError && e.code === "not_found") notFound();
-    throw e;
-  }
-  const [accts, cats] = await Promise.all([accounts(viewer.householdId), categories(viewer.householdId)]);
+  const data = await scope(householdScope(viewer), async (tx) => {
+    try {
+      const preview = await getPreview(ingestDeps(tx), viewer.householdId, id);
+      return { preview, accts: await accounts(tx, viewer.householdId), cats: await categories(tx, viewer.householdId) };
+    } catch (e) {
+      if (e instanceof ImportError && e.code === "not_found") return null;
+      throw e;
+    }
+  });
+  if (!data) notFound();
+  const { preview, accts, cats } = data;
   const catName = new Map(cats.map((c) => [c.slug, c.nameHe]));
   const rec = preview.reconciliation;
   const canEdit = viewer.role !== "viewer" && preview.status === "parsed";

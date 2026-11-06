@@ -111,6 +111,28 @@ export const householdMember = pgTable(
   (t) => [uniqueIndex("household_member_user_uq").on(t.householdId, t.userId)],
 );
 
+/** One-time invite links; only a hash of the token is stored. */
+export const invitation = pgTable(
+  "invitation",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    // the member the invitee becomes (created beforehand, e.g. the partner from setup)
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => householdMember.id, { onDelete: "cascade" }),
+    email: text("email"),
+    role: memberRole("role").notNull().default("member"),
+    tokenHash: char("token_hash", { length: 64 }).notNull().unique(),
+    invitedBy: uuid("invited_by").references(() => householdMember.id),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("invitation_member_idx").on(t.memberId)],
+);
+
 export const account = pgTable("account", {
   id: uuid("id").primaryKey().defaultRandom(),
   householdId: householdRef(),

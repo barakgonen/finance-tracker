@@ -3,8 +3,8 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { commitImport, discardImport, ImportError, stageImport } from "@ft/ingest";
-import { requireEditor } from "@/lib/auth";
-import { ingestDeps } from "@/lib/db";
+import { householdScope, requireEditor } from "@/lib/auth";
+import { ingestDeps, scope } from "@/lib/db";
 
 const MAX_BYTES = 20 * 1024 * 1024;
 const ALLOWED = /\.(pdf|xlsx|xls|csv)$/i;
@@ -18,12 +18,15 @@ export async function uploadAction(form: FormData): Promise<void> {
 
   let target: string;
   try {
-    const preview = await stageImport(ingestDeps(), {
-      householdId: viewer.householdId,
-      uploadedBy: viewer.memberId,
-      accountId,
-      file: { fileName: file.name, bytes: new Uint8Array(await file.arrayBuffer()) },
-    });
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const preview = await scope(householdScope(viewer), (tx) =>
+      stageImport(ingestDeps(tx), {
+        householdId: viewer.householdId,
+        uploadedBy: viewer.memberId,
+        accountId,
+        file: { fileName: file.name, bytes },
+      }),
+    );
     target = `/import/${preview.importId}`;
   } catch (e) {
     if (e instanceof ImportError && e.code === "duplicate_file") {
@@ -43,13 +46,15 @@ export async function commitAction(form: FormData): Promise<void> {
   const reason = String(form.get("reason") ?? "").trim();
   let error: string | undefined;
   try {
-    await commitImport(ingestDeps(), {
-      householdId: viewer.householdId,
-      importId,
-      actorMemberId: viewer.memberId,
-      accountId,
-      overrideReconciliation: reason ? { reason } : undefined,
-    });
+    await scope(householdScope(viewer), (tx) =>
+      commitImport(ingestDeps(tx), {
+        householdId: viewer.householdId,
+        importId,
+        actorMemberId: viewer.memberId,
+        accountId,
+        overrideReconciliation: reason ? { reason } : undefined,
+      }),
+    );
   } catch (e) {
     if (!(e instanceof ImportError)) throw e;
     error = e.code;
@@ -61,6 +66,6 @@ export async function commitAction(form: FormData): Promise<void> {
 export async function discardAction(form: FormData): Promise<void> {
   const viewer = await requireEditor();
   const importId = String(form.get("importId"));
-  await discardImport(ingestDeps(), viewer.householdId, importId, viewer.memberId);
+  await scope(householdScope(viewer), (tx) => discardImport(ingestDeps(tx), viewer.householdId, importId, viewer.memberId));
   redirect("/import");
 }
