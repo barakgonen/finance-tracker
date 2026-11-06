@@ -11,6 +11,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ft/analytics": "workspace:*",
     "@ft/core": "workspace:*",
     "@ft/db": "workspace:*",
     "@ft/ingest": "workspace:*",

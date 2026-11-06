@@ -4,6 +4,7 @@ import { messages } from "@/lib/i18n";
 import { reviewCount } from "@/lib/queries";
 import { logoutAction } from "../(auth)/actions";
 import { Nav } from "./Nav";
+import { ChartTooltip } from "@/components/ChartTooltip";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Nav
           items={[
             { href: "/", label: t.nav.dashboard },
+            { href: "/transactions", label: "תנועות" },
             { href: "/review", label: t.nav.review, badge: pending },
+            { href: "/expenses", label: "הוצאות" },
+            { href: "/income", label: "הכנסות" },
+            { href: "/cashflow", label: "תזרים" },
             { href: "/import", label: t.nav.import, separatorBefore: true },
             { href: "/settings/accounts", label: t.nav.accounts },
           ]}
@@ -39,6 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </form>
       </nav>
       <main className="content">{children}</main>
+      <ChartTooltip />
     </div>
   );
 }

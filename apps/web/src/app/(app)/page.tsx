@@ -1,111 +1,163 @@
 import Link from "next/link";
+import { categoryBreakdown, largestTransactions, merchantBreakdown, monthlySeries } from "@ft/analytics";
+import { BarList, ColumnChart, SERIES } from "@/components/charts";
+import { ScopeBar } from "@/components/ScopeBar";
 import { householdScope, requireViewer } from "@/lib/auth";
 import { scope } from "@/lib/db";
-import { money, percent } from "@/lib/format";
+import { change, date, money, monthName, percent } from "@/lib/format";
 import { messages } from "@/lib/i18n";
-import { latestMonth, members, monthSummary, reviewCount } from "@/lib/queries";
+import { lastNMonths, periodHref, resolvePeriod } from "@/lib/period";
+import { reviewCount } from "@/lib/queries";
 
-const MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
-
-function shift(month: string, delta: number): string {
-  const [y, m] = month.split("-").map(Number) as [number, number];
-  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
-  return d.toISOString().slice(0, 7);
+function Kpi({ label, value, swatch, delta, upIsGood }: { label: string; value: string; swatch?: string; delta?: { text: string; dir: string }; upIsGood?: boolean }) {
+  const tone = !delta || delta.dir === "none" || delta.dir === "flat" ? "muted" : (delta.dir === "up") === upIsGood ? "delta-down" : "delta-up";
+  return (
+    <div className="card stack" style={{ "--gap": "6px" } as React.CSSProperties}>
+      <span className="muted small row" style={{ "--gap": "6px" } as React.CSSProperties}>
+        {swatch && <span className="swatch" style={{ background: swatch }} aria-hidden="true" />}
+        {label}
+      </span>
+      <span className="kpi">{value}</span>
+      {delta && <span className={`small ${tone}`}>{delta.text} <span className="muted">מהחודש הקודם</span></span>}
+    </div>
+  );
 }
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ month?: string; view?: string }> }) {
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
   const params = await searchParams;
-  const { month, people, view, summary, pending } = await scope(householdScope(viewer), async (tx) => {
-    const month = /^\d{4}-\d{2}$/.test(params.month ?? "") ? params.month! : await latestMonth(tx, viewer.householdId);
-    const people = await members(tx, viewer.householdId);
-    const view = people.find((p) => p.id === params.view)?.id;
-    const summary = await monthSummary(tx, viewer.householdId, month, view);
-    const pending = await reviewCount(tx, viewer.householdId);
-    return { month, people, view, summary, pending };
+  const data = await scope(householdScope(viewer), async (tx) => {
+    const period = await resolvePeriod(tx, viewer, params);
+    const { first, last } = lastNMonths(period.month, 12);
+    const series = await monthlySeries(tx, period.filters, first, last);
+    return {
+      period,
+      series,
+      categories: await categoryBreakdown(tx, period.filters, period.month),
+      merchants: await merchantBreakdown(tx, period.filters, period.month, 5),
+      largest: await largestTransactions(tx, period.filters, period.month, 5),
+      pending: await reviewCount(tx, viewer.householdId),
+    };
   });
-  const [y, m] = month.split("-").map(Number) as [number, number];
-  const rate = summary.incomeMinor > 0n ? Number(summary.netMinor) / Number(summary.incomeMinor) : null;
-  const maxCat = summary.categories[0]?.minor ?? 1n;
-  const link = (q: { month?: string; view?: string }) =>
-    `/?${new URLSearchParams({ month: q.month ?? month, ...(q.view ?? view ? { view: (q.view ?? view)! } : {}) })}`;
+  const { period, series, categories, merchants, largest, pending } = data;
+  const cur = series[series.length - 1]!;
+  const prev = series[series.length - 2]!;
+  const rate = cur.incomeMinor > 0n ? Number(cur.netMinor) / Number(cur.incomeMinor) : null;
+  const prevRate = prev.incomeMinor > 0n ? Number(prev.netMinor) / Number(prev.incomeMinor) : null;
+  const hasHistory = series.some((m) => m.transactionCount > 0);
+  const firstWithData = series.findIndex((m) => m.transactionCount > 0);
+  const shown = series.slice(Math.max(0, Math.min(firstWithData, series.length - 6)));
+  const tx = (q: Record<string, string>) => periodHref("/transactions", period, q);
 
   return (
     <>
-      <header className="row spread">
-        <div className="row" style={{ "--gap": "8px" } as React.CSSProperties}>
-          <Link className="btn" href={link({ month: shift(month, -1) })} aria-label={t.dashboard.prev}>→</Link>
-          <h1>{MONTHS[m - 1]} {y}</h1>
-          <Link className="btn" href={link({ month: shift(month, 1) })} aria-label={t.dashboard.next}>←</Link>
-        </div>
-        <div className="seg" role="group">
-          <Link href={`/?month=${month}`} aria-current={!view}>{t.dashboard.household}</Link>
-          {people.map((p) => (
-            <Link key={p.id} href={`/?month=${month}&view=${p.id}`} aria-current={view === p.id}>{p.displayName}</Link>
-          ))}
-        </div>
-      </header>
-
-      {summary.transactionCount === 0 ? (
+      <ScopeBar path="/" period={period} title={t.nav.dashboard} />
+      {cur.transactionCount === 0 ? (
         <div className="card">
           {t.dashboard.empty} <Link href="/import">{t.nav.import}</Link>
         </div>
       ) : (
         <>
-          {summary.unreviewed.count > 0 && (
+          {cur.unreviewedCount > 0 && (
             <div role="note" className="banner warn">
               <span>
                 {t.dashboard.unreviewedNote
-                  .replace("{count}", String(summary.unreviewed.count))
-                  .replace("{income}", money(summary.unreviewed.incomeMinor, { whole: true }))
-                  .replace("{expenses}", money(summary.unreviewed.expensesMinor, { whole: true }))}{" "}
+                  .replace("{count}", String(cur.unreviewedCount))
+                  .replace("{income}", money(cur.unreviewedIncomeMinor, { whole: true }))
+                  .replace("{expenses}", money(cur.unreviewedExpensesMinor, { whole: true }))}{" "}
                 <Link href="/review">{t.dashboard.toReview}</Link>
               </span>
             </div>
           )}
-          <section className="grid" aria-label={t.dashboard.net}>
-            <div className="card stack" style={{ "--gap": "8px" } as React.CSSProperties}>
-              <span className="muted small">{t.dashboard.income}</span>
-              <span className="kpi num" style={{ color: "var(--income)" }}>{money(summary.incomeMinor, { whole: true })}</span>
-            </div>
-            <div className="card stack" style={{ "--gap": "8px" } as React.CSSProperties}>
-              <span className="muted small">{t.dashboard.expenses}</span>
-              <span className="kpi num" style={{ color: "var(--expense)" }}>{money(summary.expensesMinor, { whole: true })}</span>
-            </div>
-            <div className="card stack" style={{ "--gap": "8px" } as React.CSSProperties}>
-              <span className="muted small">{t.dashboard.net}</span>
-              <span className="kpi num">{money(summary.netMinor, { whole: true, signed: true })}</span>
-            </div>
-            <div className="card stack" style={{ "--gap": "8px" } as React.CSSProperties}>
-              <span className="muted small">{t.dashboard.savingsRate}</span>
-              <span className="kpi num">{rate === null ? t.dashboard.noIncome : percent(rate)}</span>
-            </div>
+          <section className="grid" aria-label="סיכום החודש">
+            <Kpi label={t.dashboard.income} swatch={SERIES.income} value={money(cur.incomeMinor, { whole: true })} delta={change(cur.incomeMinor, prev.transactionCount ? prev.incomeMinor : null)} upIsGood />
+            <Kpi label={t.dashboard.expenses} swatch={SERIES.expenses} value={money(cur.expensesMinor, { whole: true })} delta={change(cur.expensesMinor, prev.transactionCount ? prev.expensesMinor : null)} upIsGood={false} />
+            <Kpi label={t.dashboard.net} value={money(cur.netMinor, { whole: true, signed: true })} />
+            <Kpi
+              label={t.dashboard.savingsRate}
+              value={rate === null ? "—" : percent(rate)}
+              delta={rate !== null && prevRate !== null ? { text: `${rate >= prevRate ? "▲" : "▼"} ${Math.abs(Math.round((rate - prevRate) * 100))} נק׳`, dir: rate >= prevRate ? "up" : "down" } : undefined}
+              upIsGood
+            />
           </section>
 
-          <div className="row" style={{ alignItems: "stretch" }}>
-            <section className="card stack" style={{ flex: "2 1 420px" }}>
-              <h2>{t.dashboard.byCategory}</h2>
-              <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, "--gap": "12px" } as React.CSSProperties}>
-                {summary.categories.map((c) => (
-                  <li key={c.slug} className="stack" style={{ "--gap": "6px" } as React.CSSProperties}>
-                    <div className="row spread small">
-                      <span>{c.nameHe}</span>
-                      <span className="num">{money(c.minor, { whole: true })}</span>
-                    </div>
-                    <div className="bar" aria-hidden="true">
-                      <span style={{ inlineSize: `${(Number(c.minor) / Number(maxCat)) * 100}%`, background: c.slug === "card_unitemized" ? "#a7aeb8" : undefined }} />
-                    </div>
-                  </li>
-                ))}
-              </ul>
+          {hasHistory && (
+            <section className="card stack">
+              <div className="row spread">
+                <h2>הכנסות מול הוצאות</h2>
+                <Link className="small" href={periodHref("/cashflow", period)}>תזרים מלא</Link>
+              </div>
+              <ColumnChart
+                title="הכנסות והוצאות לפי חודש"
+                labels={shown.map((m) => monthName(m.month, true))}
+                fullLabels={shown.map((m) => monthName(m.month))}
+                series={[
+                  { name: t.dashboard.income, color: SERIES.income, values: shown.map((m) => m.incomeMinor) },
+                  { name: t.dashboard.expenses, color: SERIES.expenses, values: shown.map((m) => m.expensesMinor) },
+                ]}
+              />
             </section>
-            <Link href="/review" className="card stack" style={{ flex: "1 1 220px", textDecoration: "none", color: "inherit" }}>
-              <h2>{t.dashboard.review}</h2>
-              <span className="kpi num">{pending}</span>
-              <span style={{ color: "var(--accent)", fontWeight: 500, marginBlockStart: "auto" }}>{t.dashboard.toReview}</span>
-            </Link>
+          )}
+
+          <div className="row" style={{ alignItems: "stretch" }}>
+            <section className="card stack" style={{ flex: "3 1 420px" }}>
+              <div className="row spread">
+                <h2>{t.dashboard.byCategory}</h2>
+                <Link className="small" href={periodHref("/expenses", period)}>פירוט מלא</Link>
+              </div>
+              <BarList
+                color={SERIES.expenses}
+                valueName="החודש"
+                referenceName="ממוצע 3 חודשים קודמים"
+                rows={categories.filter((c) => c.minor > 0n).slice(0, 8).map((c) => ({
+                  key: c.slug,
+                  label: c.nameHe,
+                  href: tx({ side: "spending", category: c.slug }),
+                  value: c.minor,
+                  reference: c.avg3Minor,
+                  note: percent(c.share),
+                  muted: c.slug === "card_unitemized" || c.slug === "uncategorized",
+                }))}
+              />
+            </section>
+            <div className="stack" style={{ flex: "2 1 300px" }}>
+              <section className="card stack">
+                <h2>בתי עסק מובילים</h2>
+                <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, "--gap": "10px" } as React.CSSProperties}>
+                  {merchants.map((m) => (
+                    <li key={m.merchantId} className="row spread small">
+                      <Link href={tx({ side: "spending", merchant: m.merchantId })}>{m.name}</Link>
+                      <span className="num">{money(m.minor, { whole: true })} <span className="muted">· {m.count} עסקאות</span></span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+              <Link href="/review" className="card stack" style={{ textDecoration: "none", color: "inherit" }}>
+                <h2>{t.dashboard.review}</h2>
+                <span className="kpi">{pending}</span>
+                <span style={{ color: "var(--accent)", fontWeight: 500 }}>{t.dashboard.toReview}</span>
+              </Link>
+            </div>
           </div>
+
+          <section className="card stack">
+            <h2>התנועות הגדולות החודש</h2>
+            <div className="table-wrap">
+              <table>
+                <tbody>
+                  {largest.map((l) => (
+                    <tr key={l.id}>
+                      <td className="num">{date(l.purchaseDate)}</td>
+                      <td>{l.description}{l.needsReview ? <span className="chip warn" style={{ marginInlineStart: 8 }}>לבדיקה</span> : null}</td>
+                      <td className="muted small">{t.kinds[l.kind]}</td>
+                      <td className="num" style={{ textAlign: "end" }}>{money(l.amount, { signed: true })}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </>
       )}
     </>

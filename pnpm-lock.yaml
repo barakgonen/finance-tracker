@@ -178,6 +178,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@ft/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@ft/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -230,6 +233,34 @@ importers:
       '@types/react-dom':
         specifier: 19.0.3
         version: 19.0.3(@types/react@19.0.7)
+      typescript:
+        specifier: 5.6.3
+        version: 5.6.3
+      vitest:
+        specifier: 2.1.8
+        version: 2.1.8(@types/node@22.10.2)
+
+  packages/analytics:
+    dependencies:
+      '@ft/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ft/db':
+        specifier: workspace:*
+        version: link:../db
+      drizzle-orm:
+        specifier: 0.36.4
+        version: 0.36.4(@types/react@19.0.7)(postgres@3.4.5)(react@19.0.0)
+    devDependencies:
+      '@ft/ingest':
+        specifier: workspace:*
+        version: link:../ingest
+      '@ft/parsers':
+        specifier: workspace:*
+        version: link:../parsers
+      '@testcontainers/postgresql':
+        specifier: 10.16.0
+        version: 10.16.0(bare-buffer@3.7.1)
       typescript:
         specifier: 5.6.3
         version: 5.6.3
