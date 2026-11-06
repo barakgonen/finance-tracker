@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { createDb, runMigrations } from "@ft/db";
+import { createDb } from "@ft/db";
+import { runMigrations } from "@ft/db/migrate";
 import type { ParsedStatement, ParsedTransaction } from "@ft/parsers";
 import { BlobStore, type IngestDeps } from "../src/index.js";
 

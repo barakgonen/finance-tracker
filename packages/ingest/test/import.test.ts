@@ -216,3 +216,20 @@ describe("installments", () => {
     expect((await txs(deps.db, hh.cal.id)).map((t) => t.installmentNo).sort()).toEqual([1, 2]);
   });
 });
+
+describe("account settings", () => {
+  it("re-attributes existing bills when a card is marked as untracked", async () => {
+    const { updateAccount } = await import("../src/index.js");
+    await stageAndCommit(bankStatement([row("2026-10-11", "ישראכרט-כ.וי-י", -222200)]));
+    expect((await txs(deps.db, hh.bank.id))[0]).toMatchObject({ memberId: hh.me.id, needsReview: true });
+
+    // the user says this kind of debit is the partner's card
+    await updateAccount(deps.db, hh.hid, hh.partnerIsracard.id, { billDescriptionPattern: "ישראכרט-כ" });
+    expect((await txs(deps.db, hh.bank.id))[0]).toMatchObject({ memberId: hh.partner.id, needsReview: false });
+  });
+
+  it("rejects an invalid bill pattern", async () => {
+    const { updateAccount } = await import("../src/index.js");
+    await expect(updateAccount(deps.db, hh.hid, hh.partnerIsracard.id, { billDescriptionPattern: "([" })).rejects.toThrow(/not valid/);
+  });
+});

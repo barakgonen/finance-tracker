@@ -74,9 +74,29 @@ export const appUser = pgTable("app_user", {
   displayName: text("display_name").notNull(),
   passwordHash: text("password_hash").notNull(),
   totpSecretEnc: text("totp_secret_enc"),
+  // two-factor is mandatory: a user without a confirmed TOTP can only finish enrollment
+  totpConfirmedAt: timestamp("totp_confirmed_at", { withTimezone: true }),
   locale: text("locale").notNull().default("he"),
   ...timestamps,
 });
+
+/** Login sessions. Only a hash of the cookie token is stored. */
+export const session = pgTable(
+  "session",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tokenHash: char("token_hash", { length: 64 }).notNull().unique(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => appUser.id, { onDelete: "cascade" }),
+    // password accepted; the session is usable only once the TOTP code is verified too
+    totpVerified: boolean("totp_verified").notNull().default(false),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("session_user_idx").on(t.userId)],
+);
 
 export const householdMember = pgTable(
   "household_member",

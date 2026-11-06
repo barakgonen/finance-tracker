@@ -1,8 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
+# install scripts are opt-in; only what genuinely needs a native build runs
 allowBuilds:
-  cpu-features: set this to true or false
   esbuild: true
-  protobufjs: set this to true or false
-  ssh2: set this to true or false
+  "@node-rs/argon2": true
+  sharp: false
+  cpu-features: false
+  ssh2: false
+  protobufjs: false

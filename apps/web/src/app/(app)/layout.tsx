@@ -1,0 +1,43 @@
+import { requireViewer } from "@/lib/auth";
+import { messages } from "@/lib/i18n";
+import { reviewCount } from "@/lib/queries";
+import { logoutAction } from "../(auth)/actions";
+import { Nav } from "./Nav";
+
+export const dynamic = "force-dynamic";
+
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const viewer = await requireViewer();
+  const t = messages(viewer.locale);
+  const pending = await reviewCount(viewer.householdId);
+  return (
+    <div className="shell">
+      <nav className="sidebar" aria-label={t.nav.main}>
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 17l6-6 4 4 8-8" />
+              <path d="M15 7h6v6" />
+            </svg>
+          </span>
+          {t.app.name}
+        </div>
+        <Nav
+          items={[
+            { href: "/", label: t.nav.dashboard },
+            { href: "/review", label: t.nav.review, badge: pending },
+            { href: "/import", label: t.nav.import, separatorBefore: true },
+            { href: "/settings/accounts", label: t.nav.accounts },
+          ]}
+        />
+        <div className="nav-sep" />
+        <form action={logoutAction}>
+          <button className="navlink" type="submit" style={{ border: 0, background: "transparent", font: "inherit", inlineSize: "100%", cursor: "pointer" }}>
+            {t.nav.logout} · {viewer.displayName}
+          </button>
+        </form>
+      </nav>
+      <main className="content">{children}</main>
+    </div>
+  );
+}
