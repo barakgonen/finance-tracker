@@ -3,6 +3,7 @@ import { budgetSuggestions, budgetsWithStatus } from "@ft/analytics";
 import { ScopeBar } from "@/components/ScopeBar";
 import { householdScope, requireViewer } from "@/lib/auth";
 import { scope } from "@/lib/db";
+import { hebrewError } from "@/lib/errors";
 import { money, percent } from "@/lib/format";
 import { periodHref, resolvePeriod } from "@/lib/period";
 import { BUDGET_STATE } from "@/lib/planning-text";
@@ -37,7 +38,7 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <ScopeBar path="/budgets" period={period} title={`תקציבים · ${owner}`} />
-      {params.error && <div role="alert" className="banner warn">{ERRORS[params.error] ?? params.error}</div>}
+      {params.error && <div role="alert" className="banner warn">{ERRORS[params.error] ?? hebrewError(params.error)}</div>}
       {params.saved && <div role="status" className="banner ok">נשמר</div>}
 
       {budgets.length === 0 ? (

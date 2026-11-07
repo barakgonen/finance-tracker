@@ -3,6 +3,7 @@ import { pendingInvitations } from "@ft/ingest";
 import { householdScope, requireViewer } from "@/lib/auth";
 import { date } from "@/lib/format";
 import { scope } from "@/lib/db";
+import { hebrewError } from "@/lib/errors";
 import { messages } from "@/lib/i18n";
 import { accounts, members } from "@/lib/queries";
 import { addAccountAction, updateAccountAction } from "./actions";
@@ -120,7 +121,7 @@ export default async function AccountsPage({
   return (
     <>
       <h1>{t.accounts.title}</h1>
-      {error && <div role="alert" className="banner warn">{error === "missing" ? t.auth.invalid : error}</div>}
+      {error && <div role="alert" className="banner warn">{hebrewError(error)}</div>}
       {saved && <div role="status" className="banner ok">{t.accounts.saved}</div>}
 
       {inviteLink && (

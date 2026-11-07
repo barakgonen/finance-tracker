@@ -4,6 +4,7 @@ import { latestMonth, merchantDetail, merchantList } from "@ft/analytics";
 import { ColumnChart, SERIES } from "@/components/charts";
 import { householdScope, requireViewer } from "@/lib/auth";
 import { scope } from "@/lib/db";
+import { hebrewError } from "@/lib/errors";
 import { money, monthName } from "@/lib/format";
 import { categories } from "@/lib/queries";
 import { mergeMerchantAction, renameMerchantAction, setMerchantCategoryAction } from "../actions";
@@ -31,7 +32,7 @@ export default async function MerchantPage({ params, searchParams }: { params: P
     <>
       <Link href="/expenses?tab=merchants" className="small" style={{ textDecoration: "none" }}>→ בתי עסק</Link>
       <h1>{detail.name}</h1>
-      {error && <div role="alert" className="banner warn">{error === "missing" ? "יש לבחור בית עסק" : error}</div>}
+      {error && <div role="alert" className="banner warn">{error === "missing" ? "יש לבחור בית עסק" : hebrewError(error)}</div>}
       {saved && <div role="status" className="banner ok">נשמר</div>}
 
       <section className="grid">

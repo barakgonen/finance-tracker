@@ -2,6 +2,7 @@ import { goalsWithProgress } from "@ft/analytics";
 import { ScopeBar } from "@/components/ScopeBar";
 import { householdScope, requireViewer } from "@/lib/auth";
 import { scope } from "@/lib/db";
+import { hebrewError } from "@/lib/errors";
 import { date, money, monthName, percent } from "@/lib/format";
 import { resolvePeriod } from "@/lib/period";
 import { GOAL_STATE, GOAL_TYPE } from "@/lib/planning-text";
@@ -30,7 +31,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <ScopeBar path="/goals" period={period} title={`יעדים · ${period.view ? period.people.find((p) => p.id === period.view)?.displayName : "משותפים"}`} />
-      {params.error && <div role="alert" className="banner warn">{params.error}</div>}
+      {params.error && <div role="alert" className="banner warn">{hebrewError(params.error)}</div>}
       {params.saved && <div role="status" className="banner ok">נשמר</div>}
 
       {goals.length === 0 && <div className="card">עוד לא הוגדרו יעדים. ההתקדמות מחושבת מהתנועות עצמן, ונכנסת גם לציון הבריאות הפיננסית.</div>}
