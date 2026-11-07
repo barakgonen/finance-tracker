@@ -12,7 +12,6 @@ export interface Series {
   hollowFrom?: number;
 }
 
-const W = 680;
 const PAD = { top: 12, bottom: 30, start: 8, end: 56 }; // `end` holds the y-axis labels (right side in RTL)
 
 function niceStep(range: number): number {
@@ -57,19 +56,68 @@ export function ColumnChart({
   const step = niceStep(max - min);
   const top = Math.ceil(max / step) * step || step;
   const bottom = Math.floor(min / step) * step;
-  const plotH = height - PAD.top - PAD.bottom;
-  const plotW = W - PAD.start - PAD.end;
-  const y = (v: number) => PAD.top + ((top - v) / (top - bottom)) * plotH;
-  const groupW = plotW / n;
   const k = series.length;
-  const barW = Math.max(2, Math.min(24, (groupW - 6) / k - 2));
-  const groupContent = k * barW + (k - 1) * 2;
-  // index 0 (oldest) sits at the right edge, next to the y-axis labels
-  const groupX = (i: number) => PAD.start + plotW - (i + 1) * groupW;
   const ticks: number[] = [];
   for (let t = bottom; t <= top + 1e-9; t += step) ticks.push(t);
   const names = fullLabels ?? labels;
   const tip = (i: number) => [names[i], ...series.map((s) => `${s.name}: ${money(s.values[i]!, { whole: true })}`)].join("\n");
+
+  // one drawing per width, so text keeps its size on a phone instead of shrinking with the plot
+  const plot = (W: number, className: string) => {
+    const plotH = height - PAD.top - PAD.bottom;
+    const plotW = W - PAD.start - PAD.end;
+    const y = (v: number) => PAD.top + ((top - v) / (top - bottom)) * plotH;
+    const groupW = plotW / n;
+    const barW = Math.max(2, Math.min(24, (groupW - 6) / k - 2));
+    const groupContent = k * barW + (k - 1) * 2;
+    // index 0 (oldest) sits at the right edge, next to the y-axis labels
+    const groupX = (i: number) => PAD.start + plotW - (i + 1) * groupW;
+    // a label needs ~30 units; with narrower columns, label every few (always the newest)
+    const every = Math.ceil(30 / groupW);
+    return (
+          <svg viewBox={`0 0 ${W} ${height}`} role="img" aria-label={title} className={className} style={{ inlineSize: "100%", blockSize: "auto" }}>
+            {ticks.map((t) => (
+              <g key={t}>
+                <line x1={PAD.start} x2={PAD.start + plotW} y1={y(t)} y2={y(t)} className={t === 0 ? "chart-axis" : "chart-grid"} strokeWidth={1} />
+                <text x={W - 4} y={y(t) + 4} textAnchor="end" fontSize={11} className="chart-label" style={{ fontVariantNumeric: "tabular-nums", direction: "ltr" }}>
+                  {compactMoney(t)}
+                </text>
+              </g>
+            ))}
+            {labels.map((label, i) => {
+              const gx = groupX(i);
+              const start = gx + (groupW - groupContent) / 2;
+              return (
+                <g key={i}>
+                  {series.map((s, si) => {
+                    const v = Number(s.values[i]!);
+                    const color = colorBySign ? (v >= 0 ? colorBySign[0] : colorBySign[1]) : s.color;
+                    const hollow = s.hollowFrom !== undefined && i >= s.hollowFrom;
+                    // within a group, series also run right to left
+                    const x = start + groupContent - (si + 1) * barW - si * 2;
+                    return (
+                      <path
+                        key={s.name}
+                        d={barPath(x, barW, y(0), y(v))}
+                        style={{ fill: hollow ? "none" : color, stroke: hollow ? color : "none" }}
+                        strokeWidth={hollow ? 1.5 : 0}
+                        aria-hidden="true"
+                      />
+                    );
+                  })}
+                  {(n - 1 - i) % every === 0 && (
+                    <text x={gx + groupW / 2} y={height - 10} textAnchor="middle" fontSize={11} className="chart-label">
+                      {label}
+                    </text>
+                  )}
+                  {/* the whole column is the hit target; it reads out every series */}
+                  <rect x={gx} y={PAD.top} width={groupW} height={plotH} fill="transparent" tabIndex={0} data-tip={tip(i)} aria-label={tip(i).replace(/\n/g, ", ")} className="hit" />
+                </g>
+              );
+            })}
+          </svg>
+    );
+  };
 
   return (
     <figure className="chart" style={{ margin: 0 }}>
@@ -83,45 +131,8 @@ export function ColumnChart({
           ))}
         </figcaption>
       )}
-      <svg viewBox={`0 0 ${W} ${height}`} role="img" aria-label={title} style={{ inlineSize: "100%", blockSize: "auto", display: "block" }}>
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={PAD.start} x2={PAD.start + plotW} y1={y(t)} y2={y(t)} className={t === 0 ? "chart-axis" : "chart-grid"} strokeWidth={1} />
-            <text x={W - 4} y={y(t) + 4} textAnchor="end" fontSize={11} className="chart-label" style={{ fontVariantNumeric: "tabular-nums", direction: "ltr" }}>
-              {compactMoney(t)}
-            </text>
-          </g>
-        ))}
-        {labels.map((label, i) => {
-          const gx = groupX(i);
-          const start = gx + (groupW - groupContent) / 2;
-          return (
-            <g key={i}>
-              {series.map((s, si) => {
-                const v = Number(s.values[i]!);
-                const color = colorBySign ? (v >= 0 ? colorBySign[0] : colorBySign[1]) : s.color;
-                const hollow = s.hollowFrom !== undefined && i >= s.hollowFrom;
-                // within a group, series also run right to left
-                const x = start + groupContent - (si + 1) * barW - si * 2;
-                return (
-                  <path
-                    key={s.name}
-                    d={barPath(x, barW, y(0), y(v))}
-                    style={{ fill: hollow ? "none" : color, stroke: hollow ? color : "none" }}
-                    strokeWidth={hollow ? 1.5 : 0}
-                    aria-hidden="true"
-                  />
-                );
-              })}
-              <text x={gx + groupW / 2} y={height - 10} textAnchor="middle" fontSize={11} className="chart-label">
-                {label}
-              </text>
-              {/* the whole column is the hit target; it reads out every series */}
-              <rect x={gx} y={PAD.top} width={groupW} height={plotH} fill="transparent" tabIndex={0} data-tip={tip(i)} aria-label={tip(i).replace(/\n/g, ", ")} className="hit" />
-            </g>
-          );
-        })}
-      </svg>
+      {plot(680, "chart-wide")}
+      {plot(340, "chart-narrow")}
       <details className="table-view">
         <summary>הצגה כטבלה</summary>
         <div className="table-wrap">

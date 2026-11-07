@@ -34,8 +34,8 @@ export default async function ReviewPage() {
       {items.map(({ tx, accountName, categorySlug }) => (
         <article key={tx.id} className="card stack" aria-labelledby={`t-${tx.id}`}>
           <div className="row spread" style={{ alignItems: "flex-start" }}>
-            <div className="stack" style={{ "--gap": "4px" } as React.CSSProperties}>
-              {tx.reviewReason && <span className="chip warn" style={{ alignSelf: "flex-start" }}>{hebrewReason(tx.reviewReason)}</span>}
+            <div className="stack" style={{ "--gap": "4px", flex: "1 1 240px", minInlineSize: 0 } as React.CSSProperties}>
+              {tx.reviewReason && <span className="chip warn" style={{ alignSelf: "flex-start", whiteSpace: "normal" }}>{hebrewReason(tx.reviewReason)}</span>}
               <h2 id={`t-${tx.id}`}>{tx.descriptionRaw}</h2>
               <span className="muted small">
                 {accountName} · <span className="num">{date(tx.purchaseDate)}</span>

@@ -106,7 +106,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
           <h2>הוצאות לפי יום</h2>
           <ColumnChart
             title="הוצאות לפי יום בחודש"
-            labels={data.days.map((d, i) => (i % 5 === 0 ? d.date.slice(8) : ""))}
+            labels={data.days.map((d) => d.date.slice(8))}
             fullLabels={data.days.map((d) => `${d.date.slice(8)}.${d.date.slice(5, 7)}`)}
             series={[{ name: "הוצאות", color: SERIES.expenses, values: data.days.map((d) => d.minor) }]}
             colorBySign={[SERIES.expenses, SERIES.income]}
