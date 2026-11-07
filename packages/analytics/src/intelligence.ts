@@ -2,7 +2,7 @@
 // spending/income definitions in ./index.
 import { and, eq, inArray, lt, gte, sql } from "drizzle-orm";
 import { detectInsights, detectRecurring, INCOME_KINDS, SPENDING_KINDS, type Insight, type RecurringSeries, type TransactionKind } from "@ft/core";
-import { category, merchant, transaction, type Db } from "@ft/db";
+import { category, insightState, merchant, transaction, type Db } from "@ft/db";
 import { categoryBreakdown, detailsVisible, monthlySeries, spendingWhere, type Filters } from "./index.js";
 import { monthRange, monthsBetween, shiftMonth } from "./months.js";
 
@@ -245,4 +245,19 @@ async function accountCoverage(db: Db, f: Filters, first: string, last: string):
   const out = new Map<string, Set<string>>();
   for (const r of rows) out.set(r.month, (out.get(r.month) ?? new Set()).add(r.accountId));
   return out;
+}
+
+/** How the household marked each insight (handled / not relevant), by insight id. */
+export async function insightStates(db: Db, householdId: string): Promise<Map<string, "done" | "dismissed">> {
+  const rows = await db.select({ id: insightState.insightId, status: insightState.status }).from(insightState).where(eq(insightState.householdId, householdId));
+  return new Map(rows.map((r) => [r.id, r.status]));
+}
+
+/** The month's insights split into still-open ones and those the household already handled. */
+export async function openInsights(db: Db, f: Filters, month: string) {
+  const [all, states] = [await monthInsights(db, f, month), await insightStates(db, f.householdId)];
+  return {
+    open: all.filter((i) => !states.has(i.id)),
+    handled: all.filter((i) => states.has(i.id)).map((i) => ({ insight: i, status: states.get(i.id)! })),
+  };
 }

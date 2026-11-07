@@ -120,3 +120,24 @@ describe("merchants", () => {
     expect((await q((tx) => tx.select().from(merchant).where(eq(merchant.id, id))))[0]!.name).toBe("אבוטבול");
   });
 });
+
+describe("handled insights", () => {
+  it("hide once marked handled or not relevant, and come back when reopened", async () => {
+    const { openInsights } = await import("../src/index.js");
+    const { setInsightState } = await import("@ft/ingest");
+    const before = await q((tx) => openInsights(tx, F, "2026-10"));
+    const dup = before.open.find((i) => i.detector === "duplicate_charge")!;
+    await q((tx) => setInsightState(tx, HH, dup.id, "dismissed"));
+    const after = await q((tx) => openInsights(tx, F, "2026-10"));
+    expect(after.open.map((i) => i.id)).not.toContain(dup.id);
+    expect(after.handled).toEqual([{ insight: expect.objectContaining({ id: dup.id }), status: "dismissed" }]);
+    await q((tx) => setInsightState(tx, HH, dup.id, null));
+    expect((await q((tx) => openInsights(tx, F, "2026-10"))).open.map((i) => i.id)).toContain(dup.id);
+    await expect(q((tx) => setInsightState(tx, HH, "x'; drop table", "done"))).rejects.toThrow(/Invalid insight/);
+    // price-increase ids carry the recurring series key, "|" included
+    const price = before.open.find((i) => i.detector === "price_increase")!;
+    expect(price.id).toContain("|");
+    await q((tx) => setInsightState(tx, HH, price.id, "done"));
+    expect((await q((tx) => openInsights(tx, F, "2026-10"))).handled.map((x) => x.status)).toEqual(["done"]);
+  });
+});

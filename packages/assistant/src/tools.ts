@@ -13,8 +13,8 @@ import {
   latestMonth,
   listTransactions,
   merchantBreakdown,
-  monthInsights,
   monthlySeries,
+  openInsights,
   recurringSeries,
   type Filters,
 } from "@ft/analytics";
@@ -374,19 +374,21 @@ export const TOOLS = [
   tool({
     definition: {
       name: "get_insights",
-      description: "The month's findings (category spikes, subscriptions, price increases, possible duplicate charges, unusual purchases, savings drops), each with its numbers, monthly or one-off impact, confidence and evidence transaction ids.",
+      description: "The month's open findings (category spikes, subscriptions, price increases, possible duplicate charges, unusual purchases, savings drops), each with its numbers, monthly or one-off impact, confidence and evidence transaction ids. Findings the household already marked handled or not relevant are left out (only counted).",
       input_schema: obj({ month: str("YYYY-MM"), member: nstr(MEMBER_DESC) }),
     },
     input: z.object({ month, member }).strict(),
-    run: async (ctx, i) =>
-      (await monthInsights(ctx.db, scope(ctx, i.member), i.month)).map((x) => ({
+    run: async (ctx, i) => {
+      const { open, handled } = await openInsights(ctx.db, scope(ctx, i.member), i.month);
+      return { already_handled: handled.length, open: open.map((x) => ({
         finding: x.detector,
         details: Object.fromEntries(Object.entries(x.params).map(([k, v]) => [k, typeof v === "number" && ["current", "average", "monthly", "annual", "before", "now", "amount", "typical"].includes(k) ? v / 100 : v])),
         monthly_impact: ils(x.monthlyImpactMinor),
         one_off: ils(x.oneOffMinor),
         confidence: x.confidence,
         evidence_transaction_ids: x.evidence.slice(0, 10),
-      })),
+      })) };
+    },
   }),
 ];
 

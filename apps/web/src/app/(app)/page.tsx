@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { budgetsWithStatus, categoryBreakdown, healthScore, largestTransactions, merchantBreakdown, monthInsights, monthlySeries, recurringSeries, upcoming } from "@ft/analytics";
+import { budgetsWithStatus, categoryBreakdown, healthScore, largestTransactions, merchantBreakdown, monthlySeries, openInsights, recurringSeries, upcoming } from "@ft/analytics";
 import { InsightCard } from "@/components/InsightCard";
+import { insightStateAction } from "./insights/actions";
 import { describeInsight } from "@/lib/insight-text";
 import { BUDGET_STATE } from "@/lib/planning-text";
 import { BarList, ColumnChart, SERIES } from "@/components/charts";
@@ -41,7 +42,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       merchants: await merchantBreakdown(tx, period.filters, period.month, 5),
       largest: await largestTransactions(tx, period.filters, period.month, 5),
       pending: await reviewCount(tx, viewer.householdId, viewer.memberId),
-      insights: await monthInsights(tx, period.filters, period.month),
+      insights: (await openInsights(tx, period.filters, period.month)).open,
       recurring: await recurringSeries(tx, period.filters, period.month),
       health: await healthScore(tx, period.filters, period.month),
       budgets: await budgetsWithStatus(tx, period.filters, period.month),
@@ -104,7 +105,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                 <Link className="small" href={periodHref("/insights", period)}>כל התובנות ({insights.length})</Link>
               </div>
               <div className="grid">
-                {insights.slice(0, 3).map((i) => <InsightCard key={i.id} view={describeInsight(i, period)} />)}
+                {insights.slice(0, 3).map((i) => (
+                  <InsightCard key={i.id} view={describeInsight(i, period)} actions={viewer.role !== "viewer" ? { action: insightStateAction, insightId: i.id, returnTo: periodHref("/", period) } : undefined} />
+                ))}
               </div>
             </section>
           )}

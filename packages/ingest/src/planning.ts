@@ -1,6 +1,6 @@
 // Creating and changing budgets and goals (validated and audit-logged).
 import { and, eq, isNull } from "drizzle-orm";
-import { auditLog, budget, category, goal, householdMember, type Db } from "@ft/db";
+import { auditLog, budget, category, goal, householdMember, insightState, type Db } from "@ft/db";
 import { ImportError } from "./import.js";
 
 async function categoryId(db: Db, householdId: string, slug: string): Promise<string> {
@@ -86,4 +86,19 @@ export async function archiveGoal(db: Db, householdId: string, goalId: string, a
     .returning({ id: goal.id });
   if (!g) throw new ImportError("not_found", "Goal not found");
   await audit(db, householdId, actorMemberId, "goal", g.id, "archive");
+}
+
+/** Marks an insight handled or not relevant for the household, or clears the mark (status null). */
+export async function setInsightState(db: Db, householdId: string, insightId: string, status: "done" | "dismissed" | null, actorMemberId?: string): Promise<void> {
+  // ids look like "price_increase:out|<merchant id>:2026-10-04" (see detectInsights)
+  if (!/^[a-z_]+:[\w:.|\-]+$/.test(insightId) || insightId.length > 300) throw new ImportError("bad_state", "Invalid insight");
+  if (status === null) {
+    await db.delete(insightState).where(and(eq(insightState.householdId, householdId), eq(insightState.insightId, insightId)));
+  } else {
+    await db
+      .insert(insightState)
+      .values({ householdId, insightId, status, memberId: actorMemberId ?? null })
+      .onConflictDoUpdate({ target: [insightState.householdId, insightState.insightId], set: { status, memberId: actorMemberId ?? null, updatedAt: new Date() } });
+  }
+  await db.insert(auditLog).values({ householdId, actorMemberId: actorMemberId ?? null, entity: "insight", entityId: crypto.randomUUID(), action: status ?? "reopen", after: { insightId } });
 }

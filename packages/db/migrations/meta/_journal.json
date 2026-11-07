@@ -64,6 +64,20 @@
       "when": 1793979405515,
       "tag": "0008_assistant_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794031820234,
+      "tag": "0009_insight_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794031820602,
+      "tag": "0010_insight_state_rls",
+      "breakpoints": true
     }
   ]
 }

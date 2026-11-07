@@ -29,6 +29,7 @@ const EXACT: Record<string, string> = {
   "Merchant not found": "בית העסק לא נמצא.",
   "Transaction not found": "התנועה לא נמצאה.",
   missing: "יש למלא את כל השדות כנדרש.",
+  "Invalid insight": "התובנה לא נמצאה.",
 };
 
 const PATTERNS: [RegExp, (m: RegExpMatchArray) => string][] = [

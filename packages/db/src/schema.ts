@@ -473,3 +473,19 @@ export const assistantMessage = pgTable(
   },
   (t) => [uniqueIndex("assistant_message_seq_uq").on(t.conversationId, t.seq)],
 );
+
+export const insightStatus = pgEnum("insight_status", ["done", "dismissed"]);
+
+/** Insights the household marked as handled ("done") or not relevant ("dismissed"), by insight id. */
+export const insightState = pgTable(
+  "insight_state",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    insightId: text("insight_id").notNull(),
+    status: insightStatus("status").notNull(),
+    memberId: uuid("member_id").references(() => householdMember.id),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("insight_state_uq").on(t.householdId, t.insightId)],
+);
