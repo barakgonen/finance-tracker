@@ -20,6 +20,8 @@ const PATTERNS: [RegExp, (...m: string[]) => string][] = [
   [/^similar to "(.*)"$/, (m) => `דומה ל-"${m}"`],
   [/^issuer type (.*)$/, (t) => `לפי סוג העסקה: ${t}`],
   [/^unrecognized$/, () => "לא זוהה"],
+  [/^card bill difference$/, () => "הפרש בין החיוב בבנק לדוח הכרטיס"],
+  [/^manual$/, () => "תוקן ידנית"],
 ];
 
 export function hebrewReason(reason: string): string {

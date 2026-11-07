@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { TRANSACTION_KINDS, type TransactionKind } from "@ft/core";
-import { correctTransaction } from "@ft/ingest";
+import { confirmNearMiss, correctTransaction } from "@ft/ingest";
 import { householdScope, requireEditor } from "@/lib/auth";
 import { scope } from "@/lib/db";
 import { canSeeDetails, members } from "@/lib/queries";
@@ -31,6 +31,19 @@ export async function correctAction(form: FormData): Promise<void> {
       ...(owner === "shared" ? { memberId: null, isShared: true } : ownerMember ? { memberId: ownerMember.id, isShared: false } : {}),
       applyToMerchant: form.get("applyToMerchant") === "on",
     });
+  });
+  revalidatePath("/", "layout");
+  redirect("/review");
+}
+
+/** "Yes, this bank charge pays that card bill": links them and records the difference. */
+export async function confirmNearMissAction(form: FormData): Promise<void> {
+  const viewer = await requireEditor();
+  const transactionId = String(form.get("transactionId"));
+  await scope(householdScope(viewer), async (tx) => {
+    const [t] = await tx.select({ accountId: transaction.accountId }).from(transaction).where(eq(transaction.id, transactionId));
+    if (!t || !(await canSeeDetails(tx, viewer.householdId, t.accountId, viewer.memberId))) throw new Error("Transaction not found");
+    await confirmNearMiss(tx, { householdId: viewer.householdId, actorMemberId: viewer.memberId, transactionId, billId: String(form.get("billId")) });
   });
   revalidatePath("/", "layout");
   redirect("/review");

@@ -4,9 +4,11 @@ import { auditLog, cardSettlement, category, merchant, rawRow, transaction, type
 import {
   addAccount,
   commitImport,
+  confirmNearMiss,
   correctTransaction,
   createHousehold,
   ImportError,
+  nearMissesFor,
   reclassify,
   stageStatement,
   type IngestDeps,
@@ -195,6 +197,28 @@ describe("card bills vs. bank debits", () => {
     expect(debit).toMatchObject({ kind: "card_settlement", categoryId: null, needsReview: true });
     expect(debit!.reviewReason).toBe("bank charge 5440.00 differs from the my Cal statement total 5432.10");
     expect((await deps.db.select().from(cardSettlement).where(eq(cardSettlement.householdId, hh.hid))).length).toBe(0);
+  });
+
+  it("a confirmed near miss links the bill and records the difference as a fee on it", async () => {
+    await stageAndCommit(calBill());
+    await stageAndCommit(bankStatement([row("2026-11-02", "כרטיסי אשראי-י", -544000)]));
+    const [debit] = await txs(deps.db, hh.bank.id);
+    const near = (await nearMissesFor(deps.db, hh.hid, [debit!.id])).get(debit!.id)!;
+    expect(near).toMatchObject({ cardName: "my Cal", totalMinor: 543210n, differenceMinor: 790n });
+
+    const { adjustmentId } = await confirmNearMiss(deps.db, { householdId: hh.hid, transactionId: debit!.id, billId: near.billId, actorMemberId: hh.me.id });
+    const [after] = (await txs(deps.db, hh.bank.id)).filter((t) => t.id === debit!.id);
+    expect(after).toMatchObject({ kind: "card_settlement", needsReview: false });
+    const [fee] = (await txs(deps.db, hh.bank.id)).filter((t) => t.id === adjustmentId);
+    expect(fee).toMatchObject({ kind: "fee", amount: -790n, cardBillId: near.billId, memberId: hh.me.id });
+    // the bill's rows now add up to exactly what left the bank
+    const billRows = await deps.db.select().from(transaction).where(eq(transaction.cardBillId, near.billId));
+    expect(billRows.reduce((a, r) => a + r.amount, 0n)).toBe(debit!.amount);
+
+    // a later import doesn't undo it, and it can't be confirmed twice
+    await stageAndCommit(bankStatement([row("2026-11-20", "סופר", -1000)]));
+    expect((await txs(deps.db, hh.bank.id)).find((t) => t.id === debit!.id)!.kind).toBe("card_settlement");
+    await expect(confirmNearMiss(deps.db, { householdId: hh.hid, transactionId: debit!.id, billId: near.billId })).rejects.toThrow(ImportError);
   });
 
   it("a debit matching a card's bill pattern is that card's, even when it nearly equals another bill", async () => {

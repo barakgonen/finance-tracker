@@ -5,16 +5,21 @@ import { date, money } from "@/lib/format";
 import { messages } from "@/lib/i18n";
 import { categories, members, reviewItems } from "@/lib/queries";
 import { hebrewReason } from "@/lib/reason-text";
-import { correctAction } from "./actions";
+import { nearMissesFor } from "@ft/ingest";
+import { confirmNearMissAction, correctAction } from "./actions";
 
 export default async function ReviewPage() {
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
-  const [items, cats, people] = await scope(householdScope(viewer), async (tx) => [
-    await reviewItems(tx, viewer.householdId, viewer.memberId),
-    await categories(tx, viewer.householdId),
-    await members(tx, viewer.householdId),
-  ] as const);
+  const [items, cats, people, nearMisses] = await scope(householdScope(viewer), async (tx) => {
+    const items = await reviewItems(tx, viewer.householdId, viewer.memberId);
+    return [
+      items,
+      await categories(tx, viewer.householdId),
+      await members(tx, viewer.householdId),
+      await nearMissesFor(tx, viewer.householdId, items.filter((i) => i.tx.kind === "card_settlement").map((i) => i.tx.id)),
+    ] as const;
+  });
   const expenseCats = cats.filter((c) => c.type === "expense");
   const incomeCats = cats.filter((c) => c.type === "income");
   const readOnly = viewer.role === "viewer";
@@ -40,6 +45,25 @@ export default async function ReviewPage() {
             </div>
             <span className="kpi num" style={{ fontSize: 22, color: tx.amount > 0n ? "var(--income)" : undefined }}>{money(tx.amount, { signed: true })}</span>
           </div>
+          {!readOnly && nearMisses.get(tx.id) && (() => {
+            const near = nearMisses.get(tx.id)!;
+            const diff = near.differenceMinor;
+            return (
+              <form action={confirmNearMissAction} className="banner ok" style={{ alignItems: "center", flexWrap: "wrap" }}>
+                <input type="hidden" name="transactionId" value={tx.id} />
+                <input type="hidden" name="billId" value={near.billId} />
+                <span style={{ flex: "1 1 320px" }}>
+                  זה כנראה תשלום הדוח של {near.cardName} מ-<span className="num">{date(near.postingDate)}</span> (<span className="num">{money(near.totalMinor)}</span>).{" "}
+                  {diff > 0n ? (
+                    <>ההפרש של <span className="num">{money(diff)}</span> יירשם כעמלה של הכרטיס.</>
+                  ) : (
+                    <>ההפרש של <span className="num">{money(-diff)}</span> יירשם כזיכוי של הכרטיס.</>
+                  )}
+                </span>
+                <button className="btn primary" type="submit">כן, זה תשלום הדוח</button>
+              </form>
+            );
+          })()}
           {!readOnly && (
             <form action={correctAction} className="row" style={{ alignItems: "flex-end" }}>
               <input type="hidden" name="transactionId" value={tx.id} />
