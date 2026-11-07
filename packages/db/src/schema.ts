@@ -193,10 +193,12 @@ export const rawRow = pgTable(
       .notNull()
       .references(() => importFile.id),
     rowIndex: integer("row_index").notNull(),
+    // each parser version's extraction is kept: re-processing adds rows, never rewrites them
+    parserVersion: integer("parser_version").notNull().default(1),
     payload: jsonb("payload").notNull(),
     createdAt: timestamps.createdAt,
   },
-  (t) => [uniqueIndex("raw_row_file_idx_uq").on(t.importFileId, t.rowIndex)],
+  (t) => [uniqueIndex("raw_row_file_version_uq").on(t.importFileId, t.rowIndex, t.parserVersion)],
 );
 
 export const category = pgTable(

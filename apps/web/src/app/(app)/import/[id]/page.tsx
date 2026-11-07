@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPreview, ImportError } from "@ft/ingest";
+import { currentParserVersion } from "@ft/parsers";
+import { importFile } from "@ft/db";
+import { eq } from "drizzle-orm";
 import { householdScope, requireViewer } from "@/lib/auth";
 import { ingestDeps, scope } from "@/lib/db";
 import { date, money } from "@/lib/format";
@@ -15,25 +18,34 @@ const COMMIT_ERRORS: Record<string, string> = {
   bad_state: "הייבוא הזה כבר טופל.",
 };
 
-export default async function PreviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
+export default async function PreviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; reprocessed?: string }> }) {
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, reprocessed } = await searchParams;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
 
   const data = await scope(householdScope(viewer), async (tx) => {
     try {
       const preview = await getPreview(ingestDeps(tx), viewer.householdId, id);
       const hidden = preview.accountId ? !(await canSeeDetails(tx, viewer.householdId, preview.accountId, viewer.memberId)) : false;
-      return { preview: hidden ? { ...preview, rows: [] } : preview, hidden, accts: await accounts(tx, viewer.householdId), cats: await categories(tx, viewer.householdId) };
+      const [imp] = await tx.select({ v: importFile.parserVersion }).from(importFile).where(eq(importFile.id, id));
+      return {
+        preview: hidden ? { ...preview, rows: [] } : preview,
+        hidden,
+        parserVersion: imp?.v ?? null,
+        accts: await accounts(tx, viewer.householdId),
+        cats: await categories(tx, viewer.householdId),
+      };
     } catch (e) {
       if (e instanceof ImportError && e.code === "not_found") return null;
       throw e;
     }
   });
   if (!data) notFound();
-  const { preview, hidden, accts, cats } = data;
+  const { preview, hidden, accts, cats, parserVersion } = data;
+  const installed = preview.adapter ? currentParserVersion(preview.adapter) : null;
+  const outdated = (preview.status === "committed" || preview.status === "parsed") && installed !== null && (parserVersion ?? 0) < installed;
   const catName = new Map(cats.map((c) => [c.slug, c.nameHe]));
   const rec = preview.reconciliation;
   const canEdit = viewer.role !== "viewer" && preview.status === "parsed";
@@ -54,6 +66,14 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
       </section>
 
       {error && <div role="alert" className="banner warn">{COMMIT_ERRORS[error] ?? t.errors.generic}</div>}
+      {reprocessed && <div role="status" className="banner ok">הקובץ עובד מחדש בגרסה החדשה של המפענח.</div>}
+      {outdated && (
+        <div role="note" className="banner warn">
+          <span>
+            קיימת גרסה חדשה של המפענח לקובץ הזה. <Link href={`/import/${preview.importId}/reprocess`}>בדיקת עיבוד מחדש</Link>
+          </span>
+        </div>
+      )}
       {hidden && <div role="note" className="banner ok">זה חשבון פרטי של חבר/ה אחר/ת במשק הבית: רואים כאן רק את הסיכום, בלי התנועות.</div>}
       {preview.error && <div role="alert" className="banner error">{t.import.failed}: {preview.error}</div>}
 

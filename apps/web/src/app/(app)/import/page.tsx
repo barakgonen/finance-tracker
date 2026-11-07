@@ -3,6 +3,8 @@ import { householdScope, requireViewer } from "@/lib/auth";
 import { scope } from "@/lib/db";
 import { messages } from "@/lib/i18n";
 import { accounts, imports } from "@/lib/queries";
+import { outdatedImports } from "@ft/ingest";
+import { currentParserVersion } from "@ft/parsers";
 import { uploadAction } from "./actions";
 
 const ERRORS: Record<string, string> = {
@@ -22,9 +24,10 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
   const { error, existing } = await searchParams;
-  const [accts, history] = await scope(householdScope(viewer), async (tx) => [
+  const [accts, history, outdated] = await scope(householdScope(viewer), async (tx) => [
     await accounts(tx, viewer.householdId),
     await imports(tx, viewer.householdId),
+    new Set((await outdatedImports(tx, viewer.householdId, currentParserVersion)).map((x) => x.id)),
   ] as const);
 
   return (
@@ -77,7 +80,10 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
                     <tr key={h.id}>
                       <td><Link href={`/import/${h.id}`}><span className="num">{h.fileName}</span></Link></td>
                       <td>{h.accountName ?? "—"}</td>
-                      <td><span className={`chip ${s.tone}`}>{s.label}</span></td>
+                      <td>
+                        <span className={`chip ${s.tone}`}>{s.label}</span>
+                        {outdated.has(h.id) && <Link href={`/import/${h.id}/reprocess`} className="chip info" style={{ marginInlineStart: 6, textDecoration: "none" }}>מפענח מעודכן זמין</Link>}
+                      </td>
                       <td className="num">{inserted ?? "—"}</td>
                       <td className="num">{h.createdAt.toLocaleDateString("he-IL")}</td>
                     </tr>

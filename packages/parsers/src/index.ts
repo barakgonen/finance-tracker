@@ -15,6 +15,11 @@ export { reconcile, type ReconciliationResult } from "./reconcile.js";
 
 export const ADAPTERS: SourceAdapter[] = [isracardPdf, calPdf, calXlsx, maxPdf, maxXlsx, leumiPdf, leumiHtml];
 
+/** The installed version of a parser, or null if no such parser exists any more. */
+export function currentParserVersion(adapterId: string): number | null {
+  return ADAPTERS.find((a) => a.id === adapterId)?.version ?? null;
+}
+
 export async function extract(file: InputFile): Promise<ExtractedContent> {
   const b = file.bytes;
   if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) {

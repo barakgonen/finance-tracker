@@ -12,6 +12,7 @@ import { account, auditLog, balanceSnapshot, cardBill, importFile, rawRow, trans
 import type { BlobStore } from "./blobs.js";
 import { sha256 } from "./blobs.js";
 import { ensureCategories, loadClassifierContext, type CategoryMaps } from "./context.js";
+import type { ClassifierContext } from "@ft/core";
 import { resolveMerchant } from "./merchants.js";
 import { reconcileSettlements, type SettlementSummary } from "./settlement.js";
 import { statementFromJson, statementToJson } from "./serialize.js";
@@ -123,7 +124,7 @@ export async function stageStatement(
   if (statement && statement.transactions.length > 0) {
     await db
       .insert(rawRow)
-      .values(statement.transactions.map((t) => ({ householdId, importFileId: id, rowIndex: t.rowIndex, payload: t.raw })))
+      .values(statement.transactions.map((t) => ({ householdId, importFileId: id, rowIndex: t.rowIndex, parserVersion: statement.adapterVersion, payload: t.raw })))
       .onConflictDoNothing();
   }
   return getPreview(deps, householdId, id);
@@ -211,7 +212,12 @@ export async function commitImport(deps: IngestDeps, input: CommitInput): Promis
     const ctx = await loadClassifierContext(db, householdId, maps);
     const planned = await planRows(db, acct.id, statement);
     const rawIds = new Map(
-      (await db.select({ id: rawRow.id, rowIndex: rawRow.rowIndex }).from(rawRow).where(eq(rawRow.importFileId, imp.id))).map((r) => [r.rowIndex, r.id]),
+      (
+        await db
+          .select({ id: rawRow.id, rowIndex: rawRow.rowIndex })
+          .from(rawRow)
+          .where(and(eq(rawRow.importFileId, imp.id), eq(rawRow.parserVersion, imp.parserVersion ?? 1)))
+      ).map((r) => [r.rowIndex, r.id]),
     );
 
     let inserted = 0;
@@ -223,50 +229,14 @@ export async function commitImport(deps: IngestDeps, input: CommitInput): Promis
         duplicates++;
         continue;
       }
-      const c = classify(classifyInput(t, statement.account.type, acct.id), ctx);
-      const tracksMerchant = acct.type === "credit_card" || ["expense", "refund", "fee"].includes(c.kind);
-      const [row] = await db
-        .insert(transaction)
-        .values({
-          householdId,
-          accountId: acct.id,
-          rawRowId: rawIds.get(t.rowIndex) ?? null,
-          fingerprint: plan.fingerprint,
-          purchaseDate: t.purchaseDate,
-          postingDate: t.postingDate ?? null,
-          amount: t.amount.minor,
-          currency: t.amount.currency,
-          originalAmount: t.originalAmount?.minor ?? null,
-          originalCurrency: t.originalAmount?.currency ?? null,
-          descriptionRaw: t.description,
-          descriptionNorm: normalizeDescription(t.description).key,
-          categoryHint: t.categoryHint ?? null,
-          typeHint: t.typeHint ?? null,
-          merchantId: tracksMerchant ? await resolveMerchant(db, householdId, t.description) : null,
-          categoryId: categoryIdOf(c, maps),
-          kind: c.kind,
-          status: t.status,
-          installmentNo: t.installment?.no ?? null,
-          installmentTotal: t.installment?.total ?? null,
-          installmentOriginalAmount: t.installment?.originalAmount?.minor ?? null,
-          memberId: acct.ownerMemberId,
-          isShared: acct.ownerMemberId === null,
-          classificationSource: c.source,
-          classificationConfidence: c.confidence,
-          classificationReason: c.reason,
-          needsReview: c.needsReview,
-          reviewReason: c.needsReview ? "low confidence" : null,
-          notes: t.notes ?? null,
-        })
-        .onConflictDoNothing()
-        .returning({ id: transaction.id });
+      const row = await insertParsedRow(db, { householdId, acct, rawRowId: rawIds.get(t.rowIndex) ?? null, fingerprint: plan.fingerprint, t, accountType: statement.account.type, ctx, maps });
       if (!row) {
         duplicates++;
         continue;
       }
       inserted++;
       if (plan.supersedes) {
-        await db.update(transaction).set({ supersededById: row.id, updatedAt: new Date() }).where(eq(transaction.id, plan.supersedes));
+        await db.update(transaction).set({ supersededById: row, updatedAt: new Date() }).where(eq(transaction.id, plan.supersedes));
         supersededPending++;
       }
     }
@@ -314,6 +284,61 @@ export async function discardImport(deps: IngestDeps, householdId: string, impor
 }
 
 // --- helpers ---
+
+/** Classifies one parsed row and inserts it; null when its fingerprint already exists in the account. */
+export async function insertParsedRow(
+  db: Db,
+  r: {
+    householdId: string;
+    acct: typeof account.$inferSelect;
+    rawRowId: string | null;
+    fingerprint: string;
+    t: ParsedStatement["transactions"][number];
+    accountType: "bank" | "credit_card";
+    ctx: ClassifierContext;
+    maps: CategoryMaps;
+  },
+): Promise<string | null> {
+  const { householdId, acct, t } = r;
+  const c = classify(classifyInput(t, r.accountType, acct.id), r.ctx);
+  const tracksMerchant = acct.type === "credit_card" || ["expense", "refund", "fee"].includes(c.kind);
+  const [row] = await db
+    .insert(transaction)
+    .values({
+      householdId,
+      accountId: acct.id,
+      rawRowId: r.rawRowId,
+      fingerprint: r.fingerprint,
+      purchaseDate: t.purchaseDate,
+      postingDate: t.postingDate ?? null,
+      amount: t.amount.minor,
+      currency: t.amount.currency,
+      originalAmount: t.originalAmount?.minor ?? null,
+      originalCurrency: t.originalAmount?.currency ?? null,
+      descriptionRaw: t.description,
+      descriptionNorm: normalizeDescription(t.description).key,
+      categoryHint: t.categoryHint ?? null,
+      typeHint: t.typeHint ?? null,
+      merchantId: tracksMerchant ? await resolveMerchant(db, householdId, t.description) : null,
+      categoryId: categoryIdOf(c, r.maps),
+      kind: c.kind,
+      status: t.status,
+      installmentNo: t.installment?.no ?? null,
+      installmentTotal: t.installment?.total ?? null,
+      installmentOriginalAmount: t.installment?.originalAmount?.minor ?? null,
+      memberId: acct.ownerMemberId,
+      isShared: acct.ownerMemberId === null,
+      classificationSource: c.source,
+      classificationConfidence: c.confidence,
+      classificationReason: c.reason,
+      needsReview: c.needsReview,
+      reviewReason: c.needsReview ? "low confidence" : null,
+      notes: t.notes ?? null,
+    })
+    .onConflictDoNothing()
+    .returning({ id: transaction.id });
+  return row?.id ?? null;
+}
 
 interface RowPlan {
   fingerprint: string;

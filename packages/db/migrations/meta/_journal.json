@@ -78,6 +78,13 @@
       "when": 1794031820602,
       "tag": "0010_insight_state_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794031989429,
+      "tag": "0011_raw_row_versions",
+      "breakpoints": true
     }
   ]
 }
