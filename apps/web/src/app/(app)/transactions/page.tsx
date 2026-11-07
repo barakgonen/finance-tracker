@@ -53,7 +53,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
         <section className="banner ok" role="note">
           <span>
             {bill.cardName}
-            {bill.cardLast4 ? <> •••• <span className="num">{bill.cardLast4}</span></> : null} · דוח לחיוב ב-<span className="num">{date(bill.postingDate)}</span> · סה״כ{" "}
+            {bill.cardLast4 ? <> <span className="num">•••• {bill.cardLast4}</span></> : null} · דוח לחיוב ב-<span className="num">{date(bill.postingDate)}</span> · סה״כ{" "}
             <strong className="num">{money(bill.totalMinor)}</strong>
             {" · "}
             {bill.debitId ? "נגבה מהבנק ונספר פעם אחת: כאן, לפי התנועות." : "עוד לא נמצא חיוב תואם בבנק."}{" "}
@@ -123,7 +123,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                         ) : (
                           <>
                             משלם את הדוח של {b.cardName}
-                            {b.cardLast4 ? <> •••• <span className="num">{b.cardLast4}</span></> : null} · <span className="num">{money(b.totalMinor)}</span> ·{" "}
+                            {b.cardLast4 ? <> <span className="num">•••• {b.cardLast4}</span></> : null} · <span className="num">{money(b.totalMinor)}</span> ·{" "}
                             <Link href={periodHref("/transactions", period, { bill: b.billId })}>{b.rowCount} תנועות</Link>
                           </>
                         )}

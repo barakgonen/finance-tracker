@@ -86,8 +86,8 @@ export function ColumnChart({
       <svg viewBox={`0 0 ${W} ${height}`} role="img" aria-label={title} style={{ inlineSize: "100%", blockSize: "auto", display: "block" }}>
         {ticks.map((t) => (
           <g key={t}>
-            <line x1={PAD.start} x2={PAD.start + plotW} y1={y(t)} y2={y(t)} stroke={t === 0 ? "#c3c2b7" : "#ecebe6"} strokeWidth={1} />
-            <text x={W - 4} y={y(t) + 4} textAnchor="end" fontSize={11} fill="#59616e" style={{ fontVariantNumeric: "tabular-nums" }}>
+            <line x1={PAD.start} x2={PAD.start + plotW} y1={y(t)} y2={y(t)} className={t === 0 ? "chart-axis" : "chart-grid"} strokeWidth={1} />
+            <text x={W - 4} y={y(t) + 4} textAnchor="end" fontSize={11} className="chart-label" style={{ fontVariantNumeric: "tabular-nums", direction: "ltr" }}>
               {compactMoney(t)}
             </text>
           </g>
@@ -107,14 +107,13 @@ export function ColumnChart({
                   <path
                     key={s.name}
                     d={barPath(x, barW, y(0), y(v))}
-                    fill={hollow ? "none" : color}
-                    stroke={hollow ? color : "none"}
+                    style={{ fill: hollow ? "none" : color, stroke: hollow ? color : "none" }}
                     strokeWidth={hollow ? 1.5 : 0}
                     aria-hidden="true"
                   />
                 );
               })}
-              <text x={gx + groupW / 2} y={height - 10} textAnchor="middle" fontSize={11} fill="#59616e">
+              <text x={gx + groupW / 2} y={height - 10} textAnchor="middle" fontSize={11} className="chart-label">
                 {label}
               </text>
               {/* the whole column is the hit target; it reads out every series */}
@@ -183,7 +182,7 @@ export function BarList({ rows, color, referenceName, valueName }: { rows: BarRo
                 <span className="num">{money(r.value, { whole: true })}{r.note ? <span className="muted"> · {r.note}</span> : null}</span>
               </div>
               <div className="bar-track" aria-hidden="true">
-                <span className="bar-fill" style={{ inlineSize: pct(r.value), background: r.muted ? "#a7aeb8" : color }} />
+                <span className="bar-fill" style={{ inlineSize: pct(r.value), background: r.muted ? "var(--series-muted)" : color }} />
                 {r.reference != null && <span className="bar-ref" style={{ insetInlineStart: pct(r.reference) }} />}
               </div>
             </li>
@@ -194,4 +193,5 @@ export function BarList({ rows, color, referenceName, valueName }: { rows: BarRo
   );
 }
 
-export const SERIES = { income: "#2557b8", expenses: "#b45309", negative: "#d03b3b" };
+// CSS variables (see globals.css), so every chart follows the light/dark theme
+export const SERIES = { income: "var(--series-income)", expenses: "var(--series-expenses)", negative: "var(--series-negative)" };

@@ -137,7 +137,7 @@ export default async function AccountsPage({
       <section className="card stack">
         <h2>{t.accounts.members}</h2>
         {people.map((p) => (
-          <div key={p.id} className="stack" style={{ "--gap": "8px", borderBlockEnd: "1px solid #eef0f3", paddingBlockEnd: 12 } as React.CSSProperties}>
+          <div key={p.id} className="stack" style={{ "--gap": "8px", borderBlockEnd: "1px solid var(--row-line)", paddingBlockEnd: 12 } as React.CSSProperties}>
             <div className="row spread">
               <strong>{p.displayName}</strong>
               <span className="chip">{t.roles[p.role]} · {p.userId ? t.invite.hasLogin : t.invite.noLogin}</span>
@@ -188,7 +188,7 @@ export default async function AccountsPage({
       <section className="card stack">
         <h2>{t.accounts.list}</h2>
         {accts.map((a) => (
-          <details key={a.id} className="stack" style={{ borderBlockEnd: "1px solid #eef0f3", paddingBlock: 12 }}>
+          <details key={a.id} className="stack" style={{ borderBlockEnd: "1px solid var(--row-line)", paddingBlock: 12 }}>
             <summary className="row spread" style={{ cursor: "pointer", minBlockSize: 44 }}>
               <span className="stack" style={{ "--gap": "2px" } as React.CSSProperties}>
                 <strong>{a.name}{a.numberLast4 ? <span className="num"> •••• {a.numberLast4}</span> : null}</strong>

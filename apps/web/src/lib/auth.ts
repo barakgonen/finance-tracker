@@ -64,6 +64,7 @@ export interface Viewer {
   displayName: string;
   email: string;
   locale: string;
+  theme: "system" | "light" | "dark";
   memberId: string;
   householdId: string;
   role: "admin" | "member" | "viewer";
@@ -85,6 +86,7 @@ export async function requireViewer(): Promise<Viewer> {
     displayName: s.user.displayName,
     email: s.user.email,
     locale: s.user.locale,
+    theme: s.user.theme,
     memberId: member.id,
     householdId: member.householdId,
     role: member.role,

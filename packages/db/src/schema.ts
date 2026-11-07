@@ -79,6 +79,8 @@ export const appUser = pgTable("app_user", {
   // two-factor is mandatory: a user without a confirmed TOTP can only finish enrollment
   totpConfirmedAt: timestamp("totp_confirmed_at", { withTimezone: true }),
   locale: text("locale").notNull().default("he"),
+  // "system" follows the device's light/dark setting
+  theme: text("theme", { enum: ["system", "light", "dark"] }).notNull().default("system"),
   ...timestamps,
 });
 

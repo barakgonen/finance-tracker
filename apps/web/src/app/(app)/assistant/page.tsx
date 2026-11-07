@@ -52,7 +52,7 @@ export default async function AssistantPage({ searchParams }: { searchParams: Pr
         <h1>שאלו את הכספים</h1>
         <div className="card stack">
           <p style={{ margin: 0 }}>העוזר כבוי. כדי להפעיל אותו, הוסיפו לקובץ ‎.env‎ את מפתח ה-API של Claude והפעילו מחדש:</p>
-          <pre className="num" style={{ margin: 0, background: "#f3f4f6", padding: 12, borderRadius: 8 }}>{"ANTHROPIC_API_KEY=sk-ant-...\nAI_ENABLED=true"}</pre>
+          <pre className="num" style={{ margin: 0, background: "var(--code-bg)", padding: 12, borderRadius: 8 }}>{"ANTHROPIC_API_KEY=sk-ant-...\nAI_ENABLED=true"}</pre>
           <p className="muted small" style={{ margin: 0, lineHeight: 1.6 }}>
             כשהעוזר פעיל, השאלה ותוצאות השליפות שהוא מבצע (סכומים, תאריכים, שמות בתי עסק, קטגוריות, ושמות החשבונות וחברי משק הבית כפי שהגדרתם אותם) נשלחות ל-Anthropic לעיבוד. קבצי הדוחות, מספרי חשבון וכרטיס, והסיסמאות לא נשלחים. העוזר רק קורא נתונים ולא יכול לשנות אותם.
           </p>
@@ -80,7 +80,7 @@ export default async function AssistantPage({ searchParams }: { searchParams: Pr
         <div className="stack" style={{ flex: "3 1 480px", minInlineSize: 0 }}>
           {messages.map((m) =>
             m.role === "user" ? (
-              <div key={m.id} className="card" style={{ background: "var(--accent-soft)", borderColor: "#b9dcd7", alignSelf: "flex-start", maxInlineSize: "85%" }}>
+              <div key={m.id} className="card" style={{ background: "var(--accent-soft)", borderColor: "var(--ok-border)", alignSelf: "flex-start", maxInlineSize: "85%" }}>
                 {m.text}
               </div>
             ) : (
