@@ -254,6 +254,8 @@ export const transaction = pgTable(
     fingerprint: char("fingerprint", { length: 64 }).notNull(),
     purchaseDate: date("purchase_date").notNull(),
     postingDate: date("posting_date"),
+    // the card statement bill this row is itemized on (card rows only)
+    cardBillId: uuid("card_bill_id").references((): AnyPgColumn => cardBill.id),
     amount: money("amount").notNull(), // signed: negative = money out
     currency: char("currency", { length: 3 }).notNull().default("ILS"),
     originalAmount: money("original_amount"),
@@ -288,6 +290,7 @@ export const transaction = pgTable(
     uniqueIndex("transaction_fingerprint_uq").on(t.accountId, t.fingerprint),
     index("transaction_hh_date_idx").on(t.householdId, t.purchaseDate),
     index("transaction_hh_cat_date_idx").on(t.householdId, t.categoryId, t.purchaseDate),
+    index("transaction_card_bill_idx").on(t.cardBillId),
     index("transaction_hh_merchant_date_idx").on(t.householdId, t.merchantId, t.purchaseDate),
     index("transaction_desc_trgm_idx").using("gin", sql`${t.descriptionNorm} gin_trgm_ops`),
     index("transaction_review_idx").on(t.householdId, t.needsReview),
@@ -340,21 +343,28 @@ export const cardBill = pgTable(
   (t) => [uniqueIndex("card_bill_uq").on(t.cardAccountId, t.postingDate, t.total)],
 );
 
-/** Links a card bill to the bank debit that paid it; that debit is then excluded from spending. */
-export const cardSettlement = pgTable("card_settlement", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  householdId: householdRef(),
-  cardBillId: uuid("card_bill_id")
-    .notNull()
-    .unique()
-    .references(() => cardBill.id),
-  bankTransactionId: uuid("bank_transaction_id")
-    .notNull()
-    .unique()
-    .references(() => transaction.id),
-  dayDiff: integer("day_diff").notNull(),
-  ...timestamps,
-});
+/**
+ * Links a card bill to the bank debit that paid it; that debit is then excluded from spending.
+ * A bill is paid by at most one debit; one debit may pay several bills (two cards of the same
+ * issuer, or a card's domestic and abroad sections, charged together).
+ */
+export const cardSettlement = pgTable(
+  "card_settlement",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    cardBillId: uuid("card_bill_id")
+      .notNull()
+      .unique()
+      .references(() => cardBill.id),
+    bankTransactionId: uuid("bank_transaction_id")
+      .notNull()
+      .references(() => transaction.id),
+    dayDiff: integer("day_diff").notNull(),
+    ...timestamps,
+  },
+  (t) => [index("card_settlement_debit_idx").on(t.bankTransactionId)],
+);
 
 export const balanceSnapshot = pgTable("balance_snapshot", {
   id: uuid("id").primaryKey().defaultRandom(),

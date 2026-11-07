@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listTransactions, monthRange, UNCATEGORIZED } from "@ft/analytics";
+import { billsForDebits, billSummary, listTransactions, monthRange, UNCATEGORIZED } from "@ft/analytics";
 import { householdScope, requireViewer } from "@/lib/auth";
 import { scope } from "@/lib/db";
 import { date, money, monthName } from "@/lib/format";
@@ -10,7 +10,7 @@ import { accounts, categories } from "@/lib/queries";
 const PAGE = 100;
 const SIDES = { spending: "הוצאות", income: "הכנסות", all: "כל התנועות" } as const;
 
-type Params = { month?: string; view?: string; side?: string; category?: string; merchant?: string; account?: string; q?: string; page?: string };
+type Params = { month?: string; view?: string; side?: string; category?: string; merchant?: string; account?: string; bill?: string; q?: string; page?: string };
 
 export default async function TransactionsPage({ searchParams }: { searchParams: Promise<Params> }) {
   const viewer = await requireViewer();
@@ -25,6 +25,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
     const cats = await categories(tx, viewer.householdId);
     const category = params.category === UNCATEGORIZED || cats.some((c) => c.slug === params.category) ? params.category : undefined;
     const { from, to } = monthRange(period.month);
+    const bill = uuid(params.bill) ? await billSummary(tx, period.filters, params.bill!) : null;
     const result = await listTransactions(tx, period.filters, {
       from,
       to,
@@ -32,24 +33,39 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
       category,
       merchantId: uuid(params.merchant),
       accountId: uuid(params.account),
+      billId: bill?.billId,
       search: params.q?.trim().slice(0, 100) || undefined,
       limit: PAGE,
       offset: (page - 1) * PAGE,
     });
-    return { period, cats, category, result, accts: await accounts(tx, viewer.householdId) };
+    const paid = await billsForDebits(tx, period.filters, result.rows.filter((r) => r.kind === "card_settlement").map((r) => r.id));
+    return { period, cats, category, result, bill, paid, accts: await accounts(tx, viewer.householdId) };
   });
-  const { period, cats, category, result, accts } = data;
+  const { period, cats, category, result, bill, paid, accts } = data;
   const pages = Math.max(1, Math.ceil(result.count / PAGE));
-  const keep = { side, category, merchant: uuid(params.merchant), account: uuid(params.account), q: params.q };
+  const keep = { side, category, merchant: uuid(params.merchant), account: uuid(params.account), bill: bill?.billId, q: params.q };
   const total = side === "spending" ? -result.totalMinor : result.totalMinor;
 
   return (
     <>
-      <h1>תנועות · {monthName(period.month)}</h1>
+      <h1>{bill ? "תנועות הדוח" : <>תנועות · {monthName(period.month)}</>}</h1>
+      {bill && (
+        <section className="banner ok" role="note">
+          <span>
+            {bill.cardName}
+            {bill.cardLast4 ? <> •••• <span className="num">{bill.cardLast4}</span></> : null} · דוח לחיוב ב-<span className="num">{date(bill.postingDate)}</span> · סה״כ{" "}
+            <strong className="num">{money(bill.totalMinor)}</strong>
+            {" · "}
+            {bill.debitId ? "נגבה מהבנק ונספר פעם אחת: כאן, לפי התנועות." : "עוד לא נמצא חיוב תואם בבנק."}{" "}
+            <Link href={periodHref("/transactions", period, { side })}>חזרה לכל התנועות</Link>
+          </span>
+        </section>
+      )}
       <form method="get" className="card row" style={{ alignItems: "flex-end" }}>
         <input type="hidden" name="month" value={period.month} />
         {period.view && <input type="hidden" name="view" value={period.view} />}
         {keep.merchant && <input type="hidden" name="merchant" value={keep.merchant} />}
+        {keep.bill && <input type="hidden" name="bill" value={keep.bill} />}
         <div className="field-group" style={{ flex: "1 1 140px" }}>
           <label htmlFor="side">סוג</label>
           <select className="field" id="side" name="side" defaultValue={side}>
@@ -100,6 +116,19 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                     {r.description}
                     {r.installmentNo ? <span className="muted small"> · תשלום {r.installmentNo}/{r.installmentTotal}</span> : null}
                     {r.needsReview ? <span className="chip warn" style={{ marginInlineStart: 8 }}>לבדיקה</span> : null}
+                    {paid.get(r.id)?.map((b) => (
+                      <div key={b.billId} className="muted small">
+                        {b.cardName === null ? (
+                          <>משלם דוח של כרטיס פרטי · <span className="num">{money(b.totalMinor)}</span></>
+                        ) : (
+                          <>
+                            משלם את הדוח של {b.cardName}
+                            {b.cardLast4 ? <> •••• <span className="num">{b.cardLast4}</span></> : null} · <span className="num">{money(b.totalMinor)}</span> ·{" "}
+                            <Link href={periodHref("/transactions", period, { bill: b.billId })}>{b.rowCount} תנועות</Link>
+                          </>
+                        )}
+                      </div>
+                    ))}
                   </td>
                   <td className="small">{r.categoryNameHe ?? t.kinds[r.kind]}</td>
                   <td className="small muted">{r.accountName}</td>

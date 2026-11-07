@@ -191,6 +191,33 @@ export interface CommitResult {
   settlements: SettlementSummary;
 }
 
+/**
+ * Stores the bills a card statement prints and ties each to the rows it itemizes, so a bank
+ * debit that pays a bill leads to exactly those transactions. `rowIds[i]` is the stored row of
+ * `statement.transactions[i]`.
+ */
+export async function recordCardBills(
+  db: Db,
+  r: { householdId: string; cardAccountId: string; importFileId: string; statement: ParsedStatement; rowIds: (string | null)[] },
+) {
+  const byRowIndex = new Map(r.statement.transactions.map((t, i) => [t.rowIndex, r.rowIds[i]]));
+  for (const total of r.statement.totals) {
+    if (!total.postingDate) continue;
+    await db
+      .insert(cardBill)
+      .values({ householdId: r.householdId, cardAccountId: r.cardAccountId, importFileId: r.importFileId, postingDate: total.postingDate, total: total.amount.minor, label: total.label })
+      .onConflictDoNothing();
+    const [bill] = await db
+      .select({ id: cardBill.id })
+      .from(cardBill)
+      .where(and(eq(cardBill.cardAccountId, r.cardAccountId), eq(cardBill.postingDate, total.postingDate), eq(cardBill.total, total.amount.minor)));
+    const ids = total.rowIndices.map((ri) => byRowIndex.get(ri)).filter((x): x is string => !!x);
+    if (bill && ids.length) {
+      await db.update(transaction).set({ cardBillId: bill.id }).where(and(inArray(transaction.id, ids), isNull(transaction.cardBillId)));
+    }
+  }
+}
+
 export async function commitImport(deps: IngestDeps, input: CommitInput): Promise<CommitResult> {
   return deps.db.transaction(async (db) => {
     const { householdId } = input;
@@ -223,6 +250,7 @@ export async function commitImport(deps: IngestDeps, input: CommitInput): Promis
     let inserted = 0;
     let duplicates = 0;
     let supersededPending = 0;
+    const rowIds: (string | null)[] = statement.transactions.map(() => null);
     for (const [i, t] of statement.transactions.entries()) {
       const plan = planned[i]!;
       if (plan.status === "duplicate") {
@@ -234,6 +262,7 @@ export async function commitImport(deps: IngestDeps, input: CommitInput): Promis
         duplicates++;
         continue;
       }
+      rowIds[i] = row;
       inserted++;
       if (plan.supersedes) {
         await db.update(transaction).set({ supersededById: row, updatedAt: new Date() }).where(eq(transaction.id, plan.supersedes));
@@ -242,13 +271,15 @@ export async function commitImport(deps: IngestDeps, input: CommitInput): Promis
     }
 
     if (acct.type === "credit_card") {
-      for (const total of statement.totals) {
-        if (!total.postingDate) continue;
-        await db
-          .insert(cardBill)
-          .values({ householdId, cardAccountId: acct.id, importFileId: imp.id, postingDate: total.postingDate, total: total.amount.minor, label: total.label })
-          .onConflictDoNothing();
+      // rows already stored by an earlier import of the same bill belong to it too
+      const missing = planned.map((x, i) => (rowIds[i] ? null : x.fingerprint)).filter((x): x is string => x !== null);
+      if (missing.length) {
+        const known = new Map(
+          (await db.select({ id: transaction.id, fp: transaction.fingerprint }).from(transaction).where(and(eq(transaction.accountId, acct.id), inArray(transaction.fingerprint, missing)))).map((r) => [r.fp, r.id]),
+        );
+        planned.forEach((x, i) => (rowIds[i] ??= known.get(x.fingerprint) ?? null));
       }
+      await recordCardBills(db, { householdId, cardAccountId: acct.id, importFileId: imp.id, statement, rowIds });
     } else {
       const closing = statement.closingBalance ?? latestBalance(statement);
       if (closing) {

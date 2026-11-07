@@ -1,0 +1,2 @@
+ALTER TABLE "card_settlement" DROP CONSTRAINT "card_settlement_bank_transaction_id_unique";--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "card_settlement_debit_idx" ON "card_settlement" USING btree ("bank_transaction_id");

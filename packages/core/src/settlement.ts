@@ -62,3 +62,57 @@ export function matchSettlements(bills: CardBill[], debits: BankDebit[], maxDays
   }
   return matches;
 }
+
+const daysApart = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000;
+
+/**
+ * Bank debits that pay several bills at once: one card company charging, in a single debit,
+ * the bills of two of its cards, or a card's domestic and abroad sections. A debit is matched to
+ * a set of 2-`maxBills` open bills of the issuer its description names, dated within `maxDays`,
+ * whose totals add up to the debit exactly. Run it on what single matching left unmatched.
+ */
+export function matchCombinedSettlements(bills: CardBill[], debits: BankDebit[], maxDays = 3, maxBills = 4): SettlementMatch[] {
+  const used = new Set<string>();
+  const matches: SettlementMatch[] = [];
+  for (const d of [...debits].sort((a, b) => (a.amountMinor < b.amountMinor ? -1 : 1))) {
+    const issuer = issuerForDescription(d.description);
+    if (!issuer) continue; // combining needs the debit to name the issuer
+    const pool = bills.filter((b) => !used.has(b.id) && b.institution === issuer && daysApart(b.postingDate, d.date) <= maxDays);
+    const target = -d.amountMinor;
+    let best: CardBill[] | null = null;
+    const search = (start: number, chosen: CardBill[], sum: bigint) => {
+      if (sum === target && chosen.length >= 2) {
+        const worst = (set: CardBill[]) => Math.max(...set.map((b) => daysApart(b.postingDate, d.date)));
+        if (!best || chosen.length < best.length || (chosen.length === best.length && worst(chosen) < worst(best))) best = [...chosen];
+        return;
+      }
+      if (chosen.length === maxBills || sum >= target) return;
+      for (let i = start; i < pool.length; i++) search(i + 1, [...chosen, pool[i]!], sum + pool[i]!.totalMinor);
+    };
+    search(0, [], 0n);
+    const chosen = best as CardBill[] | null;
+    if (!chosen) continue;
+    for (const b of chosen) {
+      used.add(b.id);
+      matches.push({ billId: b.id, debitId: d.id, dayDiff: daysApart(b.postingDate, d.date), issuerMatched: true });
+    }
+  }
+  return matches;
+}
+
+/**
+ * An open bill of the debit's issuer that nearly equals it (within ₪20 or 2%, within `maxDays`):
+ * almost certainly the same payment with a small difference (a fee, a rounding, a late
+ * adjustment). Counting both would count the money twice, so the caller asks the user instead.
+ */
+export function nearMissBill(debit: BankDebit, bills: CardBill[], maxDays = 5): CardBill | null {
+  const issuer = issuerForDescription(debit.description);
+  if (!issuer) return null;
+  const amount = -debit.amountMinor;
+  const close = bills
+    .filter((b) => b.institution === issuer && daysApart(b.postingDate, debit.date) <= maxDays)
+    .map((b) => ({ b, diff: b.totalMinor > amount ? b.totalMinor - amount : amount - b.totalMinor }))
+    .filter(({ b, diff }) => diff <= 2000n || diff * 50n <= b.totalMinor)
+    .sort((x, y) => (x.diff < y.diff ? -1 : 1));
+  return close[0]?.b ?? null;
+}

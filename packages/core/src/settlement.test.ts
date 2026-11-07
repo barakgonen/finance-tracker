@@ -31,3 +31,39 @@ describe("matchSettlements", () => {
     expect(m).toHaveLength(2);
   });
 });
+
+import { matchCombinedSettlements, nearMissBill } from "./settlement.js";
+
+describe("matchCombinedSettlements", () => {
+  const bill = (id: string, total: bigint, postingDate = "2026-10-10", institution = "isracard") => ({ id, institution, postingDate, totalMinor: total });
+  const debit = (id: string, amount: bigint, description = "ישראכרט-כ.וי-י", date = "2026-10-10") => ({ id, date, amountMinor: -amount, description });
+
+  it("links one debit to the bills that add up to it", () => {
+    const m = matchCombinedSettlements([bill("domestic", 423135n), bill("abroad", 47866n), bill("other", 1000n)], [debit("d", 471001n)]);
+    expect(m.map((x) => [x.billId, x.debitId]).sort()).toEqual([["abroad", "d"], ["domestic", "d"]]);
+  });
+
+  it("only combines bills of the issuer the debit names, within the date window", () => {
+    expect(matchCombinedSettlements([bill("a", 1000n), bill("b", 2000n, "2026-10-10", "max")], [debit("d", 3000n)])).toEqual([]);
+    expect(matchCombinedSettlements([bill("a", 1000n), bill("b", 2000n, "2026-09-01")], [debit("d", 3000n)])).toEqual([]);
+    expect(matchCombinedSettlements([bill("a", 1000n), bill("b", 2000n)], [debit("d", 3000n, "העברה")])).toEqual([]);
+  });
+
+  it("never uses a bill twice", () => {
+    const m = matchCombinedSettlements([bill("a", 1000n), bill("b", 2000n)], [debit("d1", 3000n), debit("d2", 3000n)]);
+    expect(new Set(m.map((x) => x.billId)).size).toBe(m.length);
+    expect(new Set(m.map((x) => x.debitId)).size).toBe(1);
+  });
+});
+
+describe("nearMissBill", () => {
+  const bills = [{ id: "mine", institution: "isracard", postingDate: "2026-10-11", totalMinor: 423135n }];
+  it("finds a bill that nearly equals the debit", () => {
+    expect(nearMissBill({ id: "d", date: "2026-10-11", amountMinor: -423136n, description: "ישראכרט-כ.וי-י" }, bills)?.id).toBe("mine");
+    expect(nearMissBill({ id: "d", date: "2026-10-11", amountMinor: -428000n, description: "ישראכרט-כ.וי-י" }, bills)?.id).toBe("mine"); // 1.1%
+  });
+  it("leaves a clearly different payment alone (another card of the same issuer)", () => {
+    expect(nearMissBill({ id: "d", date: "2026-10-11", amountMinor: -1246688n, description: 'ישראכרט בע"מ-י' }, bills)).toBeNull();
+    expect(nearMissBill({ id: "d", date: "2026-10-11", amountMinor: -423136n, description: "מקס איט פיננ-י" }, bills)).toBeNull();
+  });
+});

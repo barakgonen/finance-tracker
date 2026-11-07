@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { billsOfImport } from "@ft/analytics";
 import { getPreview, ImportError } from "@ft/ingest";
 import { currentParserVersion } from "@ft/parsers";
 import { importFile } from "@ft/db";
@@ -30,9 +31,11 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
       const preview = await getPreview(ingestDeps(tx), viewer.householdId, id);
       const hidden = preview.accountId ? !(await canSeeDetails(tx, viewer.householdId, preview.accountId, viewer.memberId)) : false;
       const [imp] = await tx.select({ v: importFile.parserVersion }).from(importFile).where(eq(importFile.id, id));
+      const bills = preview.status === "committed" && !hidden ? await billsOfImport(tx, { householdId: viewer.householdId, viewerMemberId: viewer.memberId }, id) : [];
       return {
         preview: hidden ? { ...preview, rows: [] } : preview,
         hidden,
+        bills,
         parserVersion: imp?.v ?? null,
         accts: await accounts(tx, viewer.householdId),
         cats: await categories(tx, viewer.householdId),
@@ -43,7 +46,7 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
     }
   });
   if (!data) notFound();
-  const { preview, hidden, accts, cats, parserVersion } = data;
+  const { preview, hidden, bills, accts, cats, parserVersion } = data;
   const installed = preview.adapter ? currentParserVersion(preview.adapter) : null;
   const outdated = (preview.status === "committed" || preview.status === "parsed") && installed !== null && (parserVersion ?? 0) < installed;
   const catName = new Map(cats.map((c) => [c.slug, c.nameHe]));
@@ -89,6 +92,29 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
             ))}
             {rec.problems.length > 0 && rec.checks.length === 0 && <span className="small">אין בדוח סכומים מודפסים לבדיקה.</span>}
           </div>
+        </section>
+      )}
+
+      {bills.length > 0 && (
+        <section className="card stack" aria-labelledby="bank-side" style={{ "--gap": "6px" } as React.CSSProperties}>
+          <h2 id="bank-side">החיוב בבנק</h2>
+          {bills.map((b) => (
+            <div key={b.billId} className="row spread small">
+              <span>
+                {b.label} · <span className="num">{date(b.postingDate)}</span> · <strong className="num">{money(b.totalMinor)}</strong>
+              </span>
+              {b.debit ? (
+                <span>
+                  <span className="chip ok">נמצא בבנק</span> {b.debit.accountName}, <span className="num">{date(b.debit.date)}</span>
+                  {b.debit.billsPaid > 1 ? <>, בחיוב אחד של <span className="num">{money(-b.debit.amountMinor)}</span> יחד עם עוד {b.debit.billsPaid - 1} דוחות</> : null} ·{" "}
+                  <Link href={`/transactions?month=${b.postingDate.slice(0, 7)}&bill=${b.billId}`}>התנועות</Link>
+                </span>
+              ) : (
+                <span className="muted"><span className="chip">עוד לא בבנק</span> יקושר אוטומטית כשתנועות הבנק של החודש ייובאו</span>
+              )}
+            </div>
+          ))}
+          <p className="muted small" style={{ margin: 0 }}>החיוב בבנק לא נספר כהוצאה: ההוצאה נספרת פעם אחת, לפי התנועות בדוח.</p>
         </section>
       )}
 

@@ -8,7 +8,7 @@ import { parseFile, reconcile, type InputFile, type ParsedStatement, type Reconc
 import { account, auditLog, cardBill, cardSettlement, importFile, rawRow, transaction, transactionSplit, type Db } from "@ft/db";
 import { ensureCategories, loadClassifierContext } from "./context.js";
 import { reclassify } from "./corrections.js";
-import { ImportError, insertParsedRow, type IngestDeps } from "./import.js";
+import { ImportError, insertParsedRow, recordCardBills, type IngestDeps } from "./import.js";
 import { statementToJson } from "./serialize.js";
 
 export type Parse = (file: InputFile) => Promise<{ statement: ParsedStatement }>;
@@ -188,6 +188,7 @@ export async function applyReprocess(deps: IngestDeps, input: ApplyReprocessInpu
       const [acct] = await db.select().from(account).where(eq(account.id, imp.accountId));
       const maps = await ensureCategories(db, householdId);
       const ctx = await loadClassifierContext(db, householdId, maps);
+      const rowIds: (string | null)[] = [];
       for (const [i, t] of statement.transactions.entries()) {
         const current = matches[i];
         const rawRowId = rawIds.get(t.rowIndex) ?? null;
@@ -195,8 +196,9 @@ export async function applyReprocess(deps: IngestDeps, input: ApplyReprocessInpu
           // the parser's facts (and the fingerprint they feed) are updated on every row;
           // classification stays (re-run below for rows that weren't edited by hand)
           await db.update(transaction).set({ ...factsOf(t), fingerprint: fps[i]!, rawRowId, updatedAt: new Date() }).where(eq(transaction.id, current.id));
+          rowIds[i] = current.id;
         } else {
-          await insertParsedRow(db, { householdId, acct: acct!, rawRowId, fingerprint: fps[i]!, t, accountType: statement.account.type, ctx, maps });
+          rowIds[i] = await insertParsedRow(db, { householdId, acct: acct!, rawRowId, fingerprint: fps[i]!, t, accountType: statement.account.type, ctx, maps });
         }
       }
       if (input.removeMissing) {
@@ -209,18 +211,15 @@ export async function applyReprocess(deps: IngestDeps, input: ApplyReprocessInpu
       }
       if (acct!.type === "credit_card") {
         const totals = statement.totals.filter((x) => x.postingDate);
-        for (const total of totals) {
-          await db
-            .insert(cardBill)
-            .values({ householdId, cardAccountId: acct!.id, importFileId: imp.id, postingDate: total.postingDate!, total: total.amount.minor, label: total.label })
-            .onConflictDoNothing();
-        }
+        await recordCardBills(db, { householdId, cardAccountId: acct!.id, importFileId: imp.id, statement, rowIds });
         // bills of this import the new parse no longer prints, unless already matched to a payment
         const keep = new Set(totals.map((x) => `${x.postingDate}|${x.amount.minor}`));
         const stale = (await db.select().from(cardBill).where(eq(cardBill.importFileId, imp.id))).filter((b) => !keep.has(`${b.postingDate}|${b.total}`));
         for (const b of stale) {
           const [linked] = await db.select({ id: cardSettlement.id }).from(cardSettlement).where(eq(cardSettlement.cardBillId, b.id));
-          if (!linked) await db.delete(cardBill).where(eq(cardBill.id, b.id));
+          if (linked) continue;
+          await db.update(transaction).set({ cardBillId: null }).where(eq(transaction.cardBillId, b.id));
+          await db.delete(cardBill).where(eq(cardBill.id, b.id));
         }
       }
     }

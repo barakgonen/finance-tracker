@@ -4,6 +4,7 @@ import { scope } from "@/lib/db";
 import { date, money } from "@/lib/format";
 import { messages } from "@/lib/i18n";
 import { categories, members, reviewItems } from "@/lib/queries";
+import { hebrewReason } from "@/lib/reason-text";
 import { correctAction } from "./actions";
 
 export default async function ReviewPage() {
@@ -29,12 +30,12 @@ export default async function ReviewPage() {
         <article key={tx.id} className="card stack" aria-labelledby={`t-${tx.id}`}>
           <div className="row spread" style={{ alignItems: "flex-start" }}>
             <div className="stack" style={{ "--gap": "4px" } as React.CSSProperties}>
-              {tx.reviewReason && <span className="chip warn" style={{ alignSelf: "flex-start" }}>{tx.reviewReason}</span>}
+              {tx.reviewReason && <span className="chip warn" style={{ alignSelf: "flex-start" }}>{hebrewReason(tx.reviewReason)}</span>}
               <h2 id={`t-${tx.id}`}>{tx.descriptionRaw}</h2>
               <span className="muted small">
                 {accountName} · <span className="num">{date(tx.purchaseDate)}</span>
                 {tx.categoryHint ? ` · ענף: ${tx.categoryHint}` : ""}
-                {tx.classificationReason ? ` · ${tx.classificationReason}` : ""}
+                {tx.classificationReason ? ` · ${hebrewReason(tx.classificationReason)}` : ""}
               </span>
             </div>
             <span className="kpi num" style={{ fontSize: 22, color: tx.amount > 0n ? "var(--income)" : undefined }}>{money(tx.amount, { signed: true })}</span>

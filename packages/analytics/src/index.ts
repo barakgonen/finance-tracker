@@ -307,6 +307,8 @@ export interface TransactionQuery {
   category?: string;
   merchantId?: string;
   accountId?: string;
+  /** the rows itemized on one card bill, whatever their dates (from/to are then ignored) */
+  billId?: string;
   search?: string;
   limit?: number;
   offset?: number;
@@ -315,12 +317,14 @@ export interface TransactionQuery {
 /** A page of transactions plus the count and sum of *all* matching rows. */
 export async function listTransactions(db: Db, f: Filters, q: TransactionQuery) {
   const side = q.side ?? "all";
+  if (q.billId) q = { ...q, from: "0001-01-01", to: "9999-12-31" };
   const where = and(
     side === "spending" ? spendingWhere(f, q.from, q.to) : side === "income" ? incomeWhere(f, q.from, q.to) : base(f, q.from, q.to),
     detailsVisible(f),
     q.category === UNCATEGORIZED ? isNull(transaction.categoryId) : q.category ? eq(category.slug, q.category) : undefined,
     q.merchantId ? eq(transaction.merchantId, q.merchantId) : undefined,
     q.accountId ? eq(transaction.accountId, q.accountId) : undefined,
+    q.billId ? eq(transaction.cardBillId, q.billId) : undefined,
     q.search ? or(ilike(transaction.descriptionRaw, `%${q.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`)) : undefined,
   );
   const [summary] = await db
@@ -344,6 +348,7 @@ export async function listTransactions(db: Db, f: Filters, q: TransactionQuery) 
       categoryNameHe: category.nameHe,
       accountName: account.name,
       merchantId: transaction.merchantId,
+      cardBillId: transaction.cardBillId,
     })
     .from(transaction)
     .leftJoin(category, eq(category.id, transaction.categoryId))
@@ -377,3 +382,4 @@ export async function latestMonth(db: Db, householdId: string): Promise<string |
 export * from "./intelligence.js";
 export * from "./health.js";
 export * from "./planning.js";
+export * from "./bills.js";

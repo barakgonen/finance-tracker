@@ -142,6 +142,15 @@ describe("card bills vs. bank debits", () => {
     expect((await deps.db.select().from(cardSettlement).where(eq(cardSettlement.householdId, hh.hid))).length).toBe(1);
   });
 
+  it("ties rows to their bill even when the same bill was imported before in another format", async () => {
+    await stageAndCommit(calBill());
+    await stageAndCommit({ ...calBill(), adapter: "test-card-xlsx" });
+    const rows = await txs(deps.db, hh.cal.id);
+    expect(rows.length).toBe(2);
+    expect(new Set(rows.map((r) => r.cardBillId)).size).toBe(1);
+    expect(rows[0]!.cardBillId).not.toBeNull();
+  });
+
   it("card statement first, bank later: matched on the bank import", async () => {
     await stageAndCommit(calBill());
     const { result } = await stageAndCommit(bankStatement([row("2026-11-03", "כרטיסי אשראי-י", -543210)]));
@@ -161,6 +170,39 @@ describe("card bills vs. bank debits", () => {
     );
     const [after] = await txs(deps.db, hh.bank.id);
     expect(after!.kind).toBe("card_settlement");
+  });
+
+  it("links one debit to several bills of its issuer that sum to it", async () => {
+    await stageAndCommit(cardStatement("isracard", "2222", "2026-10-10", [row("2026-09-03", "סופר", -120000)]));
+    await stageAndCommit(cardStatement("isracard", undefined, "2026-10-10", [row("2026-09-04", "ZARA ONLINE", -34500)]), hh.partnerIsracard.id);
+    const { result } = await stageAndCommit(bankStatement([row("2026-10-10", "ישראכרט-כ.וי-י", -154500)]));
+    expect(result.settlements.matched).toBe(2);
+    const [debit] = await txs(deps.db, hh.bank.id);
+    expect(debit).toMatchObject({ kind: "card_settlement", categoryId: null, needsReview: false });
+    const links = await deps.db.select().from(cardSettlement).where(eq(cardSettlement.householdId, hh.hid));
+    expect(links.map((l) => l.bankTransactionId)).toEqual([debit!.id, debit!.id]);
+    // each bill leads to the rows it itemizes
+    const [mine] = await txs(deps.db, hh.myIsracard.id);
+    const [hers] = await txs(deps.db, hh.partnerIsracard.id);
+    expect(links.map((l) => l.cardBillId).sort()).toEqual([mine!.cardBillId, hers!.cardBillId].sort());
+  });
+
+  it("holds a debit that nearly equals an imported bill out of spending, for review", async () => {
+    await stageAndCommit(calBill());
+    const { result } = await stageAndCommit(bankStatement([row("2026-11-02", "כרטיסי אשראי-י", -544000)]));
+    expect(result.settlements.matched).toBe(0);
+    const [debit] = await txs(deps.db, hh.bank.id);
+    expect(debit).toMatchObject({ kind: "card_settlement", categoryId: null, needsReview: true });
+    expect(debit!.reviewReason).toBe("bank charge 5440.00 differs from the my Cal statement total 5432.10");
+    expect((await deps.db.select().from(cardSettlement).where(eq(cardSettlement.householdId, hh.hid))).length).toBe(0);
+  });
+
+  it("a debit matching a card's bill pattern is that card's, even when it nearly equals another bill", async () => {
+    await stageAndCommit(cardStatement("isracard", "2222", "2026-10-10", [row("2026-09-03", "סופר", -120000)]));
+    await stageAndCommit(bankStatement([row("2026-10-11", 'ישראכרט בע"מ-י', -120500)]));
+    const [debit] = await txs(deps.db, hh.bank.id);
+    expect(debit).toMatchObject({ kind: "expense", memberId: hh.partner.id, needsReview: false });
+    expect(await slugOf(debit!.categoryId)).toBe("card_unitemized");
   });
 
   it("an issuer debit that could be either partner's card is attributed to the tracked card and flagged", async () => {
