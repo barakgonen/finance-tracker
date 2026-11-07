@@ -6,7 +6,9 @@ import { TRANSACTION_KINDS, type TransactionKind } from "@ft/core";
 import { correctTransaction } from "@ft/ingest";
 import { householdScope, requireEditor } from "@/lib/auth";
 import { scope } from "@/lib/db";
-import { members } from "@/lib/queries";
+import { canSeeDetails, members } from "@/lib/queries";
+import { transaction } from "@ft/db";
+import { eq } from "drizzle-orm";
 
 export async function correctAction(form: FormData): Promise<void> {
   const viewer = await requireEditor();
@@ -16,6 +18,8 @@ export async function correctAction(form: FormData): Promise<void> {
   if (!(TRANSACTION_KINDS as readonly string[]).includes(kind)) redirect("/review?error=1");
 
   await scope(householdScope(viewer), async (tx) => {
+    const [t] = await tx.select({ accountId: transaction.accountId }).from(transaction).where(eq(transaction.id, String(form.get("transactionId"))));
+    if (!t || !(await canSeeDetails(tx, viewer.householdId, t.accountId, viewer.memberId))) throw new Error("Transaction not found");
     // "shared" or one of this household's members; anything else is ignored
     const ownerMember = (await members(tx, viewer.householdId)).find((m) => m.id === owner);
     await correctTransaction(tx, {

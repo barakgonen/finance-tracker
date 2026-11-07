@@ -19,7 +19,7 @@ export async function resolvePeriod(tx: Db, viewer: Viewer, params: { month?: st
   const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(params.month ?? "")
     ? params.month!
     : ((await latestMonth(tx, viewer.householdId)) ?? new Date().toISOString().slice(0, 7));
-  return { month, view, people, filters: { householdId: viewer.householdId, memberId: view } };
+  return { month, view, people, filters: { householdId: viewer.householdId, memberId: view, viewerMemberId: viewer.memberId } };
 }
 
 /** Builds a link to `path` keeping the period, with overrides. */

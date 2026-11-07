@@ -12,6 +12,20 @@ export interface Filters {
   householdId: string;
   /** narrows to one member's transactions (the individual view) */
   memberId?: string;
+  /**
+   * The member looking. Other members' private accounts then count in totals but their individual
+   * transactions and merchants are left out. Unset only for internal computations.
+   */
+  viewerMemberId?: string;
+}
+
+/**
+ * Excludes transactions of other members' private accounts. Used by everything that shows
+ * individual transactions or merchant names; totals and category sums keep counting them.
+ */
+export function detailsVisible(f: Filters): SQL | undefined {
+  if (!f.viewerMemberId) return undefined;
+  return sql`${transaction.accountId} not in (select ${account.id} from ${account} where ${account.householdId} = ${f.householdId} and ${account.visibility} = 'private' and ${account.ownerMemberId} is distinct from ${f.viewerMemberId})`;
 }
 
 const SPENDING = [...SPENDING_KINDS] as TransactionKind[];
@@ -190,7 +204,7 @@ export async function merchantBreakdown(db: Db, f: Filters, month: string, limit
     .select({ merchantId: merchant.id, name: merchant.name, month: monthOf, total: spentSum, count: sql<number>`count(*)::int` })
     .from(transaction)
     .innerJoin(merchant, eq(merchant.id, transaction.merchantId))
-    .where(spendingWhere(f, monthRange(prev).from, monthRange(month).to))
+    .where(and(spendingWhere(f, monthRange(prev).from, monthRange(month).to), detailsVisible(f)))
     .groupBy(merchant.id, merchant.name, monthOf);
   const out = new Map<string, MerchantRow>();
   for (const r of rows) {
@@ -303,6 +317,7 @@ export async function listTransactions(db: Db, f: Filters, q: TransactionQuery) 
   const side = q.side ?? "all";
   const where = and(
     side === "spending" ? spendingWhere(f, q.from, q.to) : side === "income" ? incomeWhere(f, q.from, q.to) : base(f, q.from, q.to),
+    detailsVisible(f),
     q.category === UNCATEGORIZED ? isNull(transaction.categoryId) : q.category ? eq(category.slug, q.category) : undefined,
     q.merchantId ? eq(transaction.merchantId, q.merchantId) : undefined,
     q.accountId ? eq(transaction.accountId, q.accountId) : undefined,
@@ -346,7 +361,7 @@ export async function largestTransactions(db: Db, f: Filters, month: string, lim
   return db
     .select({ id: transaction.id, purchaseDate: transaction.purchaseDate, description: transaction.descriptionRaw, amount: transaction.amount, kind: transaction.kind, needsReview: transaction.needsReview })
     .from(transaction)
-    .where(and(base(f, from, to), inArray(transaction.kind, [...SPENDING, ...INCOME])))
+    .where(and(base(f, from, to), inArray(transaction.kind, [...SPENDING, ...INCOME]), detailsVisible(f)))
     .orderBy(desc(sql`abs(${transaction.amount})`))
     .limit(limit);
 }

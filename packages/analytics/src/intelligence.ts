@@ -3,7 +3,7 @@
 import { and, eq, inArray, lt, gte, sql } from "drizzle-orm";
 import { detectInsights, detectRecurring, INCOME_KINDS, SPENDING_KINDS, type Insight, type RecurringSeries, type TransactionKind } from "@ft/core";
 import { category, merchant, transaction, type Db } from "@ft/db";
-import { categoryBreakdown, monthlySeries, spendingWhere, type Filters } from "./index.js";
+import { categoryBreakdown, detailsVisible, monthlySeries, spendingWhere, type Filters } from "./index.js";
 import { monthRange, monthsBetween, shiftMonth } from "./months.js";
 
 export type RecurringWithCategory = RecurringSeries & { categorySlug: string | null; categoryName: string | null; merchantId: string | null };
@@ -41,6 +41,7 @@ export async function recurringSeries(db: Db, f: Filters, month: string): Promis
         lt(transaction.purchaseDate, to),
         inArray(transaction.kind, KINDS),
         f.memberId ? eq(transaction.memberId, f.memberId) : undefined,
+        detailsVisible(f),
       ),
     );
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -120,7 +121,7 @@ export async function monthInsights(db: Db, f: Filters, month: string): Promise<
     .from(transaction)
     .leftJoin(merchant, eq(merchant.id, transaction.merchantId))
     .leftJoin(category, eq(category.id, transaction.categoryId))
-    .where(spendingWhere(f, from, to));
+    .where(and(spendingWhere(f, from, to), detailsVisible(f)));
 
   // typical single-purchase size per category over the six months before
   const norms = await db
@@ -163,8 +164,14 @@ export interface MerchantDetail {
 export async function merchantDetail(db: Db, f: Filters, merchantId: string, month: string): Promise<MerchantDetail | null> {
   const [m] = await db.select().from(merchant).where(and(eq(merchant.id, merchantId), eq(merchant.householdId, f.householdId)));
   if (!m) return null;
+  // a merchant known only from someone else's private account stays hidden, name included
+  const [seen] = await db
+    .select({ all: sql<number>`count(*)::int`, visible: sql<number>`(count(*) filter (where ${detailsVisible(f) ?? sql`true`}))::int` })
+    .from(transaction)
+    .where(eq(transaction.merchantId, merchantId));
+  if (seen && seen.all > 0 && seen.visible === 0) return null;
   const first = shiftMonth(month, -11);
-  const where = and(spendingWhere(f, monthRange(first).from, monthRange(month).to), eq(transaction.merchantId, merchantId));
+  const where = and(spendingWhere(f, monthRange(first).from, monthRange(month).to), eq(transaction.merchantId, merchantId), detailsVisible(f));
   const monthOf = sql<string>`to_char(${transaction.purchaseDate}, 'YYYY-MM')`;
   const perMonth = await db
     .select({ month: monthOf, total: sql<string>`coalesce(-sum(${transaction.amount}), 0)`, count: sql<number>`count(*)::int` })
@@ -202,12 +209,22 @@ export async function merchantDetail(db: Db, f: Filters, merchantId: string, mon
   };
 }
 
-/** Merchants of the household, for pickers (merge target). */
-export async function merchantList(db: Db, householdId: string) {
+/** Merchants of the household the viewer may see, for pickers (merge target). */
+export async function merchantList(db: Db, f: Filters) {
+  const hidden = detailsVisible(f);
   return db
     .select({ id: merchant.id, name: merchant.name })
     .from(merchant)
-    .where(and(eq(merchant.householdId, householdId), sql`${merchant.mergedIntoId} is null`))
+    .where(
+      and(
+        eq(merchant.householdId, f.householdId),
+        sql`${merchant.mergedIntoId} is null`,
+        // leave out merchants seen only on other members' private accounts
+        hidden
+          ? sql`(not exists (select 1 from ${transaction} where ${transaction.merchantId} = ${merchant.id}) or exists (select 1 from ${transaction} where ${transaction.merchantId} = ${merchant.id} and ${hidden}))`
+          : undefined,
+      ),
+    )
     .orderBy(merchant.name);
 }
 

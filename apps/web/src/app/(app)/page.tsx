@@ -40,7 +40,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       categories: await categoryBreakdown(tx, period.filters, period.month),
       merchants: await merchantBreakdown(tx, period.filters, period.month, 5),
       largest: await largestTransactions(tx, period.filters, period.month, 5),
-      pending: await reviewCount(tx, viewer.householdId),
+      pending: await reviewCount(tx, viewer.householdId, viewer.memberId),
       insights: await monthInsights(tx, period.filters, period.month),
       recurring: await recurringSeries(tx, period.filters, period.month),
       health: await healthScore(tx, period.filters, period.month),

@@ -52,7 +52,7 @@ const MESSAGES = {
 };
 
 /** Asks one question in a (new or existing) conversation of the member, within a household-scoped transaction. */
-export async function ask(client: ModelClient, ctx: ToolContext & { memberId: string }, input: AskInput): Promise<AskResult> {
+export async function ask(client: ModelClient, ctx: Omit<ToolContext, "viewerMemberId"> & { memberId: string }, input: AskInput): Promise<AskResult> {
   const { db, householdId } = ctx;
   let conversationId = input.conversationId ?? null;
   if (conversationId) {
@@ -134,7 +134,7 @@ export async function ask(client: ModelClient, ctx: ToolContext & { memberId: st
       // run them in order on the request's transaction; return all results in one message
       const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
       for (const u of uses) {
-        const outcome = await runTool(ctx, u.name, u.input);
+        const outcome = await runTool({ ...ctx, viewerMemberId: ctx.memberId }, u.name, u.input);
         toolCalls.push({ id: u.id, name: u.name, input: u.input, ok: outcome.ok });
         if (outcome.ok) toolResults.push(outcome.content);
         results.push({ type: "tool_result", tool_use_id: u.id, content: outcome.content, ...(outcome.ok ? {} : { is_error: true }) });

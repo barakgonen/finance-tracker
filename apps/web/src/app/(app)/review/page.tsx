@@ -10,7 +10,7 @@ export default async function ReviewPage() {
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
   const [items, cats, people] = await scope(householdScope(viewer), async (tx) => [
-    await reviewItems(tx, viewer.householdId),
+    await reviewItems(tx, viewer.householdId, viewer.memberId),
     await categories(tx, viewer.householdId),
     await members(tx, viewer.householdId),
   ] as const);

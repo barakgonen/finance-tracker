@@ -24,6 +24,8 @@ import { account, category, householdMember, transaction, type Db } from "@ft/db
 export interface ToolContext {
   db: Db;
   householdId: string;
+  /** the member asking: other members' private accounts count in totals, but not in details */
+  viewerMemberId: string;
   members: { id: string; name: string }[];
   today: string; // YYYY-MM-DD
 }
@@ -39,10 +41,11 @@ const member = z.string().nullable();
 class ToolInputError extends Error {}
 
 function scope(ctx: ToolContext, memberName: string | null): Filters {
-  if (memberName === null) return { householdId: ctx.householdId };
+  const base = { householdId: ctx.householdId, viewerMemberId: ctx.viewerMemberId };
+  if (memberName === null) return base;
   const m = ctx.members.find((x) => x.name === memberName);
   if (!m) throw new ToolInputError(`Unknown member "${memberName}". Members: ${ctx.members.map((x) => x.name).join(", ")}`);
-  return { householdId: ctx.householdId, memberId: m.id };
+  return { ...base, memberId: m.id };
 }
 
 // JSON Schema helpers (strict mode: every property required, additionalProperties false)
@@ -320,7 +323,7 @@ export const TOOLS = [
       if (i.new_monthly_payment) adj.push({ kind: "new_payment", monthlyMinor: toMinor(i.new_monthly_payment), months: i.new_payment_months ?? undefined });
       if (i.extra_saving_monthly) adj.push({ kind: "extra_saving", monthlyMinor: toMinor(i.extra_saving_monthly) });
       if (i.one_off_purchase) adj.push({ kind: "one_off", amountMinor: toMinor(i.one_off_purchase), monthIndex: Math.min(i.horizon - 1, i.one_off_month_index ?? 0) });
-      const f = { householdId: ctx.householdId };
+      const f = { householdId: ctx.householdId, viewerMemberId: ctx.viewerMemberId };
       const view = async (a: Adjustment[]) => {
         const r = await forecastFrom(ctx.db, f, i.month, i.horizon, a);
         if (r.status === "insufficient") return { status: "insufficient", complete_months_of_history: r.historyMonths, needed: 3 };

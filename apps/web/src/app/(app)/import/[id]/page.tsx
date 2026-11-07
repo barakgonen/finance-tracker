@@ -5,7 +5,7 @@ import { householdScope, requireViewer } from "@/lib/auth";
 import { ingestDeps, scope } from "@/lib/db";
 import { date, money } from "@/lib/format";
 import { messages } from "@/lib/i18n";
-import { accounts, categories } from "@/lib/queries";
+import { accounts, canSeeDetails, categories } from "@/lib/queries";
 import { commitAction, discardAction } from "../actions";
 
 const COMMIT_ERRORS: Record<string, string> = {
@@ -25,14 +25,15 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
   const data = await scope(householdScope(viewer), async (tx) => {
     try {
       const preview = await getPreview(ingestDeps(tx), viewer.householdId, id);
-      return { preview, accts: await accounts(tx, viewer.householdId), cats: await categories(tx, viewer.householdId) };
+      const hidden = preview.accountId ? !(await canSeeDetails(tx, viewer.householdId, preview.accountId, viewer.memberId)) : false;
+      return { preview: hidden ? { ...preview, rows: [] } : preview, hidden, accts: await accounts(tx, viewer.householdId), cats: await categories(tx, viewer.householdId) };
     } catch (e) {
       if (e instanceof ImportError && e.code === "not_found") return null;
       throw e;
     }
   });
   if (!data) notFound();
-  const { preview, accts, cats } = data;
+  const { preview, hidden, accts, cats } = data;
   const catName = new Map(cats.map((c) => [c.slug, c.nameHe]));
   const rec = preview.reconciliation;
   const canEdit = viewer.role !== "viewer" && preview.status === "parsed";
@@ -53,6 +54,7 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
       </section>
 
       {error && <div role="alert" className="banner warn">{COMMIT_ERRORS[error] ?? t.errors.generic}</div>}
+      {hidden && <div role="note" className="banner ok">זה חשבון פרטי של חבר/ה אחר/ת במשק הבית: רואים כאן רק את הסיכום, בלי התנועות.</div>}
       {preview.error && <div role="alert" className="banner error">{t.import.failed}: {preview.error}</div>}
 
       {rec && (

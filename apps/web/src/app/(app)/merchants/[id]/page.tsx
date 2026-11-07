@@ -15,9 +15,10 @@ export default async function MerchantPage({ params, searchParams }: { params: P
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const data = await scope(householdScope(viewer), async (tx) => {
     const month = (await latestMonth(tx, viewer.householdId)) ?? new Date().toISOString().slice(0, 7);
-    const detail = await merchantDetail(tx, { householdId: viewer.householdId }, id, month);
+    const f = { householdId: viewer.householdId, viewerMemberId: viewer.memberId };
+    const detail = await merchantDetail(tx, f, id, month);
     if (!detail) return null;
-    return { month, detail, cats: await categories(tx, viewer.householdId), others: (await merchantList(tx, viewer.householdId)).filter((m) => m.id !== id) };
+    return { month, detail, cats: await categories(tx, viewer.householdId), others: (await merchantList(tx, f)).filter((m) => m.id !== id) };
   });
   if (!data) notFound();
   const { month, detail, cats, others } = data;

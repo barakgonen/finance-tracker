@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
-  const pending = await scope(householdScope(viewer), (tx) => reviewCount(tx, viewer.householdId));
+  const pending = await scope(householdScope(viewer), (tx) => reviewCount(tx, viewer.householdId, viewer.memberId));
   return (
     <div className="shell">
       <nav className="sidebar" aria-label={t.nav.main}>

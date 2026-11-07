@@ -27,7 +27,7 @@ beforeAll(async () => {
     return { members, bank: bank.id, card: card.id };
   });
   partnerId = ids.members[1]!.id;
-  ctxBase = { householdId: HH, members: ids.members.map((m) => ({ id: m.id, name: m.displayName })), today: "2026-11-06", memberId: ids.members[0]!.id };
+  ctxBase = { householdId: HH, members: ids.members.map((m) => ({ id: m.id, name: m.displayName })), today: "2026-11-06", memberId: ids.members[0]!.id, viewerMemberId: ids.members[0]!.id };
   const load = (s: ParsedStatement, accountId: string) =>
     q(async (tx) => {
       const deps = { db: tx, blobs: h.deps.blobs };
