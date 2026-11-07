@@ -1,0 +1,28 @@
+{
+  "name": "@ft/assistant",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.1.0",
+    "@ft/analytics": "workspace:*",
+    "@ft/core": "workspace:*",
+    "@ft/db": "workspace:*",
+    "drizzle-orm": "0.36.4",
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "@ft/ingest": "workspace:*",
+    "@ft/parsers": "workspace:*",
+    "@testcontainers/postgresql": "10.16.0",
+    "typescript": "5.6.3",
+    "vitest": "2.1.8"
+  }
+}

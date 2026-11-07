@@ -11,7 +11,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.1.0",
     "@ft/analytics": "workspace:*",
+    "@ft/assistant": "workspace:*",
     "@ft/core": "workspace:*",
     "@ft/db": "workspace:*",
     "@ft/ingest": "workspace:*",

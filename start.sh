@@ -70,6 +70,9 @@ COOKIE_SECURE=false
 # 127.0.0.1 = this computer only. 0.0.0.0 makes it reachable from your network.
 HOST=127.0.0.1
 PORT=$app_port
+# The assistant ("שאלו את הכספים") is off by default. To turn it on, set a Claude API key and
+# AI_ENABLED=true. Questions and the data the assistant retrieves are then sent to Anthropic.
+# ANTHROPIC_API_KEY=sk-ant-...
 AI_ENABLED=false
 ENV
 fi

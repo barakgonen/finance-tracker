@@ -19,6 +19,10 @@ export const env = {
   get blobDir() {
     return process.env.BLOB_DIR ?? "./data/blobs";
   },
+  /** The assistant runs only when explicitly enabled and a Claude API key is configured. */
+  get aiEnabled() {
+    return process.env.AI_ENABLED === "true" && !!process.env.ANTHROPIC_API_KEY;
+  },
   /** Secure cookies need HTTPS; a LAN-only install over plain HTTP can opt out explicitly. */
   get cookieSecure() {
     return process.env.COOKIE_SECURE !== "false" && process.env.NODE_ENV === "production";

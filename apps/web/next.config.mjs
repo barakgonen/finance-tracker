@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // workspace packages and native/worker-based deps load as plain Node modules on the server
-  serverExternalPackages: ["@ft/parsers", "@ft/ingest", "@ft/db", "pdfjs-dist", "postgres", "@node-rs/argon2"],
+  serverExternalPackages: ["@ft/parsers", "@ft/ingest", "@ft/db", "pdfjs-dist", "postgres", "@node-rs/argon2", "@anthropic-ai/sdk"],
   experimental: {
     serverActions: { bodySizeLimit: "20mb" }, // statement uploads
   },

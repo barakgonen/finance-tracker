@@ -428,3 +428,48 @@ export const goal = pgTable(
   },
   (t) => [index("goal_household_idx").on(t.householdId)],
 );
+
+export const assistantRole = pgEnum("assistant_role", ["user", "assistant"]);
+
+export const assistantConversation = pgTable(
+  "assistant_conversation",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    // who asked; the conversation is private to them
+    memberId: uuid("member_id")
+      .notNull()
+      .references(() => householdMember.id),
+    title: text("title").notNull(),
+    ...timestamps,
+  },
+  (t) => [index("assistant_conversation_member_idx").on(t.householdId, t.memberId)],
+);
+
+/**
+ * Every API turn of a conversation, append-only and exactly as sent/received (thinking blocks,
+ * tool calls and tool results included), so the conversation can be replayed to the API and
+ * every answer audited against the data it was based on.
+ */
+export const assistantMessage = pgTable(
+  "assistant_message",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    householdId: householdRef(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => assistantConversation.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    role: assistantRole("role").notNull(),
+    content: jsonb("content").notNull(),
+    // shown in the chat (the question and the final answer); tool turns are kept but hidden
+    visible: boolean("visible").notNull().default(false),
+    displayText: text("display_text"),
+    // final answers: which tool calls they drew on, and which numbers couldn't be traced to them
+    toolCalls: jsonb("tool_calls"),
+    verification: jsonb("verification"),
+    usage: jsonb("usage"),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [uniqueIndex("assistant_message_seq_uq").on(t.conversationId, t.seq)],
+);
