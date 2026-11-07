@@ -141,7 +141,7 @@ describe.skipIf(files.length === 0)("classification on real statements", () => {
     // the user resolves every August review item once; each correction becomes a merchant rule
     const rules = (await classifyFile(aug!))
       .filter((r) => r.c.needsReview)
-      .map((r, i) => ruleFromCorrection(`r${i}`, r.t.description, { category: "other_expense" }));
+      .map((r, i) => ruleFromCorrection(`r${i}`, r.t.description, r.t.amount.minor, { category: "other_expense" }));
     const pending = async (ctx: ClassifierContext) =>
       (await Promise.all(later.map((f) => classifyFile(f, ctx)))).flat().filter((r) => r.c.needsReview).length;
     const before = await pending({});

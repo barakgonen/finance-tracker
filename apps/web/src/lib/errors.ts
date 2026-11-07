@@ -4,6 +4,7 @@ const EXACT: Record<string, string> = {
   "Can't merge a merchant into itself": "אי אפשר לאחד בית עסק עם עצמו.",
   "Card number must be exactly 4 digits": "יש להזין בדיוק 4 ספרות אחרונות של הכרטיס.",
   "Choose a spending category": "יש לבחור קטגוריית הוצאה.",
+  "Only money coming in can be income": "רק כסף שנכנס לחשבון יכול להיות הכנסה.",
   email_taken: "האימייל הזה כבר רשום.",
   "Give the goal a name": "יש לתת שם ליעד.",
   "Invalid start month": "חודש ההתחלה לא תקין.",

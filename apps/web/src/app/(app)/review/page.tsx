@@ -1,4 +1,4 @@
-import { TRANSACTION_KINDS } from "@ft/core";
+import { INCOME_KINDS, TRANSACTION_KINDS } from "@ft/core";
 import { householdScope, requireViewer } from "@/lib/auth";
 import { scope } from "@/lib/db";
 import { date, money } from "@/lib/format";
@@ -46,7 +46,7 @@ export default async function ReviewPage() {
               <div className="field-group" style={{ flex: "1 1 180px" }}>
                 <label htmlFor={`k-${tx.id}`}>{t.review.kind}</label>
                 <select className="field" id={`k-${tx.id}`} name="kind" defaultValue={tx.kind}>
-                  {TRANSACTION_KINDS.map((k) => (
+                  {TRANSACTION_KINDS.filter((k) => tx.amount > 0n || !INCOME_KINDS.has(k)).map((k) => (
                     <option key={k} value={k}>{t.kinds[k]}</option>
                   ))}
                 </select>
@@ -58,9 +58,11 @@ export default async function ReviewPage() {
                   <optgroup label={t.dashboard.expenses}>
                     {expenseCats.map((c) => <option key={c.id} value={c.slug}>{c.nameHe}</option>)}
                   </optgroup>
-                  <optgroup label={t.dashboard.income}>
-                    {incomeCats.map((c) => <option key={c.id} value={c.slug}>{c.nameHe}</option>)}
-                  </optgroup>
+                  {tx.amount > 0n && (
+                    <optgroup label={t.dashboard.income}>
+                      {incomeCats.map((c) => <option key={c.id} value={c.slug}>{c.nameHe}</option>)}
+                    </optgroup>
+                  )}
                 </select>
               </div>
               <div className="field-group" style={{ flex: "1 1 150px" }}>

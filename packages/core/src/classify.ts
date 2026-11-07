@@ -1,6 +1,6 @@
 // Decides a transaction's kind and category. Steps run in precedence order and the first
 // confident answer wins; every result says where it came from so the UI can explain it.
-import type { TransactionKind } from "./kinds.js";
+import { INCOME_KINDS, type TransactionKind } from "./kinds.js";
 import { normalizeDescription, similarity } from "./merchant.js";
 import { SYSTEM_CATEGORIES } from "./categories.js";
 import { BANK_ENTRIES, ISSUER_CATEGORY_MAP, MERCHANT_ENTRIES, TYPE_HINT_KINDS, type DictionaryEntry } from "./dictionary.js";
@@ -72,6 +72,7 @@ export interface ClassifierContext {
 
 export const DEFAULT_REVIEW_THRESHOLD = 0.7;
 const EXPENSE_CATEGORIES = new Set(SYSTEM_CATEGORIES.filter((c) => c.type === "expense").map((c) => c.slug));
+const INCOME_CATEGORIES = new Set(SYSTEM_CATEGORIES.filter((c) => c.type === "income").map((c) => c.slug));
 const NEIGHBOUR_MIN_SIMILARITY = 0.6;
 
 export function ruleMatches(rule: Rule, input: ClassifyInput, key: string): boolean {
@@ -88,6 +89,15 @@ export function ruleMatches(rule: Rule, input: ClassifyInput, key: string): bool
 
 function direction(input: ClassifyInput): "in" | "out" {
   return input.amountMinor < 0n ? "out" : "in";
+}
+
+/**
+ * Income is money coming in: a learned answer (rule, merchant, similar transaction) that would
+ * make outgoing money income, or file it under an income category, doesn't apply to it.
+ */
+export function fitsDirection(amountMinor: bigint, kind: TransactionKind | undefined, category: string | null | undefined): boolean {
+  if (amountMinor >= 0n) return true;
+  return !(kind && INCOME_KINDS.has(kind)) && !(category && INCOME_CATEGORIES.has(category));
 }
 
 /** The kind implied by the money's direction when nothing more specific is known. */
@@ -113,7 +123,7 @@ export function classify(input: ClassifyInput, ctx: ClassifierContext = {}): Cla
 
   // 1. user rules
   for (const rule of [...(ctx.rules ?? [])].sort((a, b) => a.priority - b.priority)) {
-    if (!ruleMatches(rule, input, key)) continue;
+    if (!ruleMatches(rule, input, key) || !fitsDirection(input.amountMinor, rule.actions.kind, rule.actions.category)) continue;
     return done({
       kind: rule.actions.kind ?? defaultKind(input),
       category: rule.actions.category ?? null,
@@ -126,7 +136,7 @@ export function classify(input: ClassifyInput, ctx: ClassifierContext = {}): Cla
 
   // 2. merchant the user already categorized
   const merchant = ctx.merchants?.get(key);
-  if (merchant) {
+  if (merchant && fitsDirection(input.amountMinor, merchant.kind, merchant.category)) {
     return done({
       kind: merchant.kind ?? defaultKind(input),
       category: merchant.category ?? null,
@@ -173,6 +183,7 @@ export function classify(input: ClassifyInput, ctx: ClassifierContext = {}): Cla
   // 4. nearest neighbour over the household's own corrected history
   let best: { ex: LabeledExample; score: number } | undefined;
   for (const ex of ctx.examples ?? []) {
+    if (!fitsDirection(input.amountMinor, ex.kind, ex.category)) continue;
     const score = similarity(key, ex.key);
     if (score >= NEIGHBOUR_MIN_SIMILARITY && (!best || score > best.score)) best = { ex, score };
   }
@@ -198,8 +209,9 @@ export function classify(input: ClassifyInput, ctx: ClassifierContext = {}): Cla
 
 /**
  * Turns a user's correction into a rule for that merchant, so it applies to past and future
- * transactions ("always categorize X as Y").
+ * transactions ("always categorize X as Y"). It applies to money moving the same way as the
+ * corrected transaction: marking a salary deposit doesn't touch a payment to the same name.
  */
-export function ruleFromCorrection(id: string, description: string, actions: RuleActions, priority = 100): Rule {
-  return { id, priority, conditions: { merchantKey: normalizeDescription(description).key }, actions };
+export function ruleFromCorrection(id: string, description: string, amountMinor: bigint, actions: RuleActions, priority = 100): Rule {
+  return { id, priority, conditions: { merchantKey: normalizeDescription(description).key, direction: amountMinor < 0n ? "out" : "in" }, actions };
 }

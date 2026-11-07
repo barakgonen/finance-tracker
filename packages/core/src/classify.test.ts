@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { classify, ruleFromCorrection, type ClassifyInput } from "./classify.js";
 import { ISSUER_CATEGORY_MAP, MERCHANT_ENTRIES, BANK_ENTRIES, words } from "./dictionary.js";
 import { CATEGORY_SLUGS } from "./categories.js";
+import { normalizeDescription } from "./merchant.js";
 
 const card = (description: string, amountMinor = -1000n, extra: Partial<ClassifyInput> = {}): ClassifyInput => ({
   description,
@@ -88,7 +89,7 @@ describe("classify", () => {
   });
 
   it("user rules win over everything", () => {
-    const rule = ruleFromCorrection("r1", "חברה כלשהי בעמ-י", { kind: "income", category: "salary" });
+    const rule = ruleFromCorrection("r1", "חברה כלשהי בעמ-י", 1500000n, { kind: "income", category: "salary" });
     expect(classify(bank("חברה כלשהי בעמ-י", 1500000n), { rules: [rule] })).toMatchObject({
       kind: "income",
       category: "salary",
@@ -97,6 +98,25 @@ describe("classify", () => {
     });
     const override = { id: "r2", priority: 1, conditions: { descriptionRegex: "רמי לוי" }, actions: { category: "home" } };
     expect(classify(card("רמי לוי"), { rules: [override] }).category).toBe("home");
+  });
+
+  it("never makes outgoing money income", () => {
+    // a salary rule, learned from the deposit, doesn't touch a payment to the same name
+    const salary = ruleFromCorrection("r1", "חברה כלשהי בעמ-י", 1500000n, { kind: "income", category: "salary" });
+    expect(salary.conditions.direction).toBe("in");
+    expect(classify(bank("חברה כלשהי בעמ-י", -20000n), { rules: [salary] })).toMatchObject({ kind: "expense", source: "none" });
+    // nor does a rule without a direction, a merchant mapping, or a similar income example
+    const loose = { id: "r2", priority: 1, conditions: { descriptionRegex: "חברה כלשהי" }, actions: { kind: "income" as const, category: "salary" } };
+    expect(classify(bank("חברה כלשהי בעמ-י", -20000n), { rules: [loose] }).kind).toBe("expense");
+    const merchants = new Map([[normalizeDescription("חברה כלשהי בעמ-י").key, { kind: "income" as const, category: "salary" }]]);
+    expect(classify(bank("חברה כלשהי בעמ-י", -20000n), { merchants }).kind).toBe("expense");
+    const examples = [{ key: normalizeDescription("חברה כלשהי בעמ-י").key, kind: "income" as const, category: "salary" }];
+    expect(classify(bank("חברה כלשהי בעמ-י", -20000n), { examples }).kind).toBe("expense");
+    // the same mappings do apply to the deposit (so the checks above aren't vacuous)
+    expect(classify(bank("חברה כלשהי בעמ-י", 1500000n), { merchants }).source).toBe("merchant");
+    expect(classify(bank("חברה כלשהי בעמ-י", 1500000n), { examples }).source).toBe("neighbour");
+    // the deposit itself is still salary
+    expect(classify(bank("חברה כלשהי בעמ-י", 1500000n), { rules: [loose] })).toMatchObject({ kind: "income", category: "salary" });
   });
 
   it("applies merchant mappings and learns from similar past corrections", () => {

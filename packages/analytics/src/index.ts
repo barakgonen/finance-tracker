@@ -1,7 +1,7 @@
 // Household financial analytics. Every function takes a row-level-security scoped transaction
 // and the same Filters, and all of them build on one definition of "spending" and "income"
 // (spendingWhere / incomeWhere), so a drill-down list always adds up to the figure it came from.
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { INCOME_KINDS, SPENDING_KINDS, type TransactionKind } from "@ft/core";
 import { account, category, merchant, transaction, type Db } from "@ft/db";
 import { monthRange, monthsBetween, shiftMonth } from "./months.js";
@@ -43,8 +43,12 @@ function base(f: Filters, from: string, to: string): SQL {
   )!;
 }
 
-export const spendingWhere = (f: Filters, from: string, to: string) => and(base(f, from, to), inArray(transaction.kind, SPENDING))!;
-export const incomeWhere = (f: Filters, from: string, to: string) => and(base(f, from, to), inArray(transaction.kind, INCOME))!;
+// Income is money coming in. Classification never makes outgoing money income, but should a row
+// say so anyway (an old manual edit, say), the money still left: it counts as spending.
+const incomeIn = () => and(inArray(transaction.kind, INCOME), gt(transaction.amount, 0n))!;
+const incomeOut = () => and(inArray(transaction.kind, INCOME), lt(transaction.amount, 0n))!;
+export const spendingWhere = (f: Filters, from: string, to: string) => and(base(f, from, to), or(inArray(transaction.kind, SPENDING), incomeOut()))!;
+export const incomeWhere = (f: Filters, from: string, to: string) => and(base(f, from, to), incomeIn())!;
 
 const minor = (v: string | null | undefined) => BigInt(v ?? "0");
 /** Spending rows are negative; their sum negated is the amount spent (refunds reduce it). */
@@ -74,7 +78,7 @@ export async function monthlySeries(db: Db, f: Filters, first: string, last: str
   const rows = await db
     .select({
       month: monthOf,
-      kind: transaction.kind,
+      isIncome: sql<boolean>`${incomeIn()}`,
       total: amountSum,
       unreviewed: unreviewedSum,
       unreviewedCount: sql<number>`(count(*) filter (where ${transaction.needsReview}))::int`,
@@ -82,7 +86,7 @@ export async function monthlySeries(db: Db, f: Filters, first: string, last: str
     })
     .from(transaction)
     .where(and(base(f, from, to), inArray(transaction.kind, [...SPENDING, ...INCOME])))
-    .groupBy(monthOf, transaction.kind);
+    .groupBy(monthOf, sql`2`); // 2 = isIncome
 
   const byMonth = new Map(
     monthsBetween(first, last).map((m) => [
@@ -95,7 +99,7 @@ export async function monthlySeries(db: Db, f: Filters, first: string, last: str
     if (!t) continue;
     t.transactionCount += r.count;
     t.unreviewedCount += r.unreviewedCount;
-    if (INCOME_KINDS.has(r.kind)) {
+    if (r.isIncome) {
       t.incomeMinor += minor(r.total);
       t.unreviewedIncomeMinor += minor(r.unreviewed);
     } else {
@@ -264,10 +268,10 @@ export async function cashFlow(db: Db, f: Filters, first: string, last: string):
   const { from } = monthRange(first);
   const { to } = monthRange(last);
   const rows = await db
-    .select({ month: monthOf, kind: transaction.kind, total: amountSum })
+    .select({ month: monthOf, kind: transaction.kind, isIncome: sql<boolean>`${incomeIn()}`, total: amountSum })
     .from(transaction)
     .where(base(f, from, to))
-    .groupBy(monthOf, transaction.kind);
+    .groupBy(monthOf, transaction.kind, sql`3`); // 3 = isIncome
   const out = new Map(
     monthsBetween(first, last).map((m) => [
       m,
@@ -278,8 +282,8 @@ export async function cashFlow(db: Db, f: Filters, first: string, last: string):
     const c = out.get(r.month);
     if (!c) continue;
     const total = minor(r.total);
-    if (INCOME_KINDS.has(r.kind)) c.incomeMinor += total;
-    else if (SPENDING_KINDS.has(r.kind)) c.spendingMinor -= total;
+    if (r.isIncome) c.incomeMinor += total;
+    else if (SPENDING_KINDS.has(r.kind) || INCOME_KINDS.has(r.kind)) c.spendingMinor -= total;
     else if (r.kind === "savings_investment") c.savedMinor -= total;
     else if (r.kind === "card_settlement") c.cardBillsMinor -= total;
     else c.transfersMinor += total; // internal_transfer, p2p_transfer

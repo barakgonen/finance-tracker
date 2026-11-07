@@ -1,7 +1,7 @@
 // Manual corrections and re-classification. Manual edits are pinned: nothing automatic
 // (re-classification, settlement reconciliation, re-processing) ever overwrites them.
 import { and, eq, isNull, ne } from "drizzle-orm";
-import { classify, type TransactionKind } from "@ft/core";
+import { classify, fitsDirection, ruleFromCorrection, type TransactionKind } from "@ft/core";
 import { account, auditLog, categorizationRule, merchant, transaction, type Db } from "@ft/db";
 import { ensureCategories, loadClassifierContext } from "./context.js";
 import { ImportError } from "./import.js";
@@ -40,6 +40,10 @@ export async function correctTransaction(db: Db & { transaction: <T>(fn: (tx: Db
       if (input.category !== null && !categoryId) throw new ImportError("not_found", `Unknown category ${input.category}`);
     }
 
+    if (!fitsDirection(before.amount, input.kind ?? before.kind, categoryId ? maps.slugById.get(categoryId) : null)) {
+      throw new ImportError("bad_state", "Only money coming in can be income");
+    }
+
     const [after] = await tx
       .update(transaction)
       .set({
@@ -70,15 +74,13 @@ export async function correctTransaction(db: Db & { transaction: <T>(fn: (tx: Db
     let ruleId: string | null = null;
     let reclassified = 0;
     if (input.applyToMerchant) {
+      const { conditions, actions, priority } = ruleFromCorrection("", before.descriptionRaw, before.amount, {
+        kind: after!.kind,
+        category: categoryId ? maps.slugById.get(categoryId) : undefined,
+      });
       const [rule] = await tx
         .insert(categorizationRule)
-        .values({
-          householdId,
-          priority: 100,
-          conditions: { merchantKey: before.descriptionNorm },
-          actions: { kind: after!.kind, category: categoryId ? maps.slugById.get(categoryId) : undefined },
-          createdFromCorrection: true,
-        })
+        .values({ householdId, priority, conditions: { ...conditions, merchantKey: before.descriptionNorm }, actions, createdFromCorrection: true })
         .returning({ id: categorizationRule.id });
       ruleId = rule!.id;
       if (before.merchantId && categoryId) {
