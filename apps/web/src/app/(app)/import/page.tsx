@@ -6,18 +6,25 @@ import { accounts, imports } from "@/lib/queries";
 import { outdatedImports } from "@ft/ingest";
 import { currentParserVersion } from "@ft/parsers";
 import { uploadAction } from "./actions";
+import { L } from "@/lib/locale";
 
 const ERRORS: Record<string, string> = {
-  duplicate: "הקובץ הזה כבר יובא.",
-  bad_file: "יש לבחור קובץ PDF, XLSX או XLS.",
-  too_large: "הקובץ גדול מ-20MB.",
+  get duplicate() {
+    return L("הקובץ הזה כבר יובא.", "This file was already imported.");
+  },
+  get bad_file() {
+    return L("יש לבחור קובץ PDF, XLSX או XLS.", "Choose a PDF, XLSX or XLS file.");
+  },
+  get too_large() {
+    return L("הקובץ גדול מ-20MB.", "The file is larger than 20MB.");
+  },
 };
 const STATUS: Record<string, { label: string; tone: string }> = {
-  parsed: { label: "ממתין לאישור", tone: "info" },
-  committed: { label: "יובא", tone: "ok" },
-  failed: { label: "נכשל", tone: "warn" },
-  discarded: { label: "בוטל", tone: "" },
-  uploaded: { label: "הועלה", tone: "" },
+  parsed: { get label() { return L("ממתין לאישור", "Waiting for approval"); }, tone: "info" },
+  committed: { get label() { return L("יובא", "Imported"); }, tone: "ok" },
+  failed: { get label() { return L("נכשל", "Failed"); }, tone: "warn" },
+  discarded: { get label() { return L("בוטל", "Cancelled"); }, tone: "" },
+  uploaded: { get label() { return L("הועלה", "Uploaded"); }, tone: "" },
 };
 
 export default async function ImportPage({ searchParams }: { searchParams: Promise<{ error?: string; existing?: string }> }) {
@@ -35,7 +42,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
       <h1>{t.import.title}</h1>
       {error && (
         <div role="alert" className="banner warn">
-          {ERRORS[error] ?? t.errors.generic} {existing && <Link href={`/import/${existing}`}>לייבוא הקודם</Link>}
+          {ERRORS[error] ?? t.errors.generic} {existing && <Link href={`/import/${existing}`}>{L("לייבוא הקודם", "To the earlier import")}</Link>}
         </div>
       )}
       {viewer.role !== "viewer" && (
@@ -57,7 +64,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
             <button className="btn primary" type="submit">{t.import.upload}</button>
           </div>
           <p className="muted small" style={{ margin: 0 }}>
-            הקובץ נשמר מוצפן. לפני שמשהו נשמר תוצג תצוגה מקדימה עם בדיקת התאמה לסכומים שבדוח.
+            {L("הקובץ נשמר מוצפן. לפני שמשהו נשמר תוצג תצוגה מקדימה עם בדיקת התאמה לסכומים שבדוח.", "The file is stored encrypted. Before anything is saved, you'll see a preview checked against the statement's printed totals.")}
           </p>
         </form>
       )}
@@ -65,12 +72,12 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
       <section className="card stack">
         <h2>{t.import.history}</h2>
         {history.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>עוד לא יובאו דוחות.</p>
+          <p className="muted" style={{ margin: 0 }}>{L("עוד לא יובאו דוחות.", "No statements imported yet.")}</p>
         ) : (
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th scope="col">קובץ</th><th scope="col">{t.import.account}</th><th scope="col">סטטוס</th><th scope="col">נוספו</th><th scope="col">תאריך</th></tr>
+                <tr><th scope="col">{L("קובץ", "File")}</th><th scope="col">{t.import.account}</th><th scope="col">{L("סטטוס", "Status")}</th><th scope="col">{L("נוספו", "Added")}</th><th scope="col">{L("תאריך", "Date")}</th></tr>
               </thead>
               <tbody>
                 {history.map((h) => {
@@ -82,7 +89,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
                       <td>{h.accountName ?? "—"}</td>
                       <td>
                         <span className={`chip ${s.tone}`}>{s.label}</span>
-                        {outdated.has(h.id) && <Link href={`/import/${h.id}/reprocess`} className="chip info" style={{ marginInlineStart: 6, textDecoration: "none" }}>מפענח מעודכן זמין</Link>}
+                        {outdated.has(h.id) && <Link href={`/import/${h.id}/reprocess`} className="chip info" style={{ marginInlineStart: 6, textDecoration: "none" }}>{L("מפענח מעודכן זמין", "Updated parser available")}</Link>}
                       </td>
                       <td className="num">{inserted ?? "—"}</td>
                       <td className="num">{h.createdAt.toLocaleDateString("he-IL")}</td>

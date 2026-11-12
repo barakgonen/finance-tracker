@@ -9,8 +9,9 @@ import { periodHref, resolvePeriod } from "@/lib/period";
 import { BUDGET_STATE } from "@/lib/planning-text";
 import { categories } from "@/lib/queries";
 import { deleteBudgetAction, setBudgetAction } from "./actions";
+import { L, categoryName } from "@/lib/locale";
 
-const ERRORS: Record<string, string> = { limit: "יש להזין סכום חיובי" };
+const errorText = (code: string) => (code === "limit" ? L("יש להזין סכום חיובי", "Enter a positive amount") : hebrewError(code));
 
 export default async function BudgetsPage({ searchParams }: { searchParams: Promise<{ month?: string; view?: string; error?: string; saved?: string }> }) {
   const viewer = await requireViewer();
@@ -33,28 +34,29 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
       {period.view && <input type="hidden" name="view" value={period.view} />}
     </>
   );
-  const owner = period.view ? period.people.find((p) => p.id === period.view)?.displayName : "משק הבית";
+  const owner = period.view ? period.people.find((p) => p.id === period.view)?.displayName : L("משק הבית", "Household");
 
   return (
     <>
-      <ScopeBar path="/budgets" period={period} title={`תקציבים · ${owner}`} />
-      {params.error && <div role="alert" className="banner warn">{ERRORS[params.error] ?? hebrewError(params.error)}</div>}
-      {params.saved && <div role="status" className="banner ok">נשמר</div>}
+      <ScopeBar path="/budgets" period={period} title={`${L("תקציבים", "Budgets")} · ${owner}`} />
+      {params.error && <div role="alert" className="banner warn">{errorText(params.error)}</div>}
+      {params.saved && <div role="status" className="banner ok">{L("נשמר", "Saved")}</div>}
 
       {budgets.length === 0 ? (
-        <div className="card">עוד לא הוגדרו תקציבים{period.view ? " אישיים" : ""}. אפשר להתחיל מההצעות למטה, שמבוססות על ההוצאה בפועל ב-3 החודשים האחרונים.</div>
+        <div className="card">{period.view ? L("עוד לא הוגדרו תקציבים אישיים.", "No personal budgets yet.") : L("עוד לא הוגדרו תקציבים.", "No budgets yet.")}{" "}
+          {L("אפשר להתחיל מההצעות למטה, שמבוססות על ההוצאה בפועל ב-3 החודשים האחרונים.", "You can start from the suggestions below, based on actual spending in the last 3 months.")}</div>
       ) : (
         <section className="card stack">
-          <h2>החודש</h2>
+          <h2>{L("החודש", "This month")}</h2>
           <ul className="barlist">
             {budgets.map((b) => {
               const s = BUDGET_STATE[b.status.state];
-              const tip = `${b.categoryName}\n${money(b.status.spentMinor, { whole: true })} מתוך ${money(b.status.limitMinor, { whole: true })}\nצפי לסוף החודש: ${money(b.status.projectedMinor, { whole: true })}`;
+              const tip = `${categoryName(b.categoryName)}\n${money(b.status.spentMinor, { whole: true })} ${L("מתוך", "of")} ${money(b.status.limitMinor, { whole: true })}\n${L("צפי לסוף החודש", "Expected by month end")}: ${money(b.status.projectedMinor, { whole: true })}`;
               return (
                 <li key={b.id} data-tip={tip} tabIndex={0} aria-label={tip.replace(/\n/g, ", ")}>
                   <div className="row spread small">
                     <span>
-                      <Link href={periodHref("/transactions", period, { side: "spending", category: b.categorySlug })}>{b.categoryName}</Link>{" "}
+                      <Link href={periodHref("/transactions", period, { side: "spending", category: b.categorySlug })}>{categoryName(b.categoryName)}</Link>{" "}
                       <span className={`chip ${s.tone}`}>{s.icon} {s.label}</span>
                     </span>
                     <span className="num">
@@ -67,12 +69,12 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
                     <span className="bar-ref" style={{ insetInlineStart: `${b.alertRatio * 100}%` }} />
                   </div>
                   <div className="row spread small muted">
-                    <span>{b.status.projectedMinor !== b.status.spentMinor ? `בקצב הנוכחי: כ-${money(b.status.projectedMinor, { whole: true })} עד סוף החודש` : ""}</span>
+                    <span>{b.status.projectedMinor !== b.status.spentMinor ? L(`בקצב הנוכחי: כ-${money(b.status.projectedMinor, { whole: true })} עד סוף החודש`, `At this pace: about ${money(b.status.projectedMinor, { whole: true })} by month end`) : ""}</span>
                     {canEdit && (
                       <form action={deleteBudgetAction}>
                         {hidden}
                         <input type="hidden" name="budgetId" value={b.id} />
-                        <button className="btn" type="submit" style={{ minBlockSize: 32, padding: "4px 10px", fontSize: 12 }}>הסרה</button>
+                        <button className="btn" type="submit" style={{ minBlockSize: 32, padding: "4px 10px", fontSize: 12 }}>{L("הסרה", "Remove")}</button>
                       </form>
                     )}
                   </div>
@@ -80,7 +82,7 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
               );
             })}
           </ul>
-          <p className="muted small" style={{ margin: 0 }}>הקו על כל פס הוא סף ההתראה. ״בקצב לחריגה״ נבדק מהשבוע השני של החודש.</p>
+          <p className="muted small" style={{ margin: 0 }}>{L("הקו על כל פס הוא סף ההתראה. ״בקצב לחריגה״ נבדק מהשבוע השני של החודש.", "The line on each bar is the alert threshold. \"On pace to exceed\" is checked from the second week of the month.")}</p>
         </section>
       )}
 
@@ -88,20 +90,20 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
         <>
           {suggestions.filter((s) => !budgeted.has(s.slug)).length > 0 && (
             <section className="card stack">
-              <h2>הצעות לפי 3 החודשים האחרונים</h2>
+              <h2>{L("הצעות לפי 3 החודשים האחרונים", "Suggestions from the last 3 months")}</h2>
               <div className="table-wrap">
                 <table>
                   <tbody>
                     {suggestions.filter((s) => !budgeted.has(s.slug)).slice(0, 8).map((s) => (
                       <tr key={s.slug}>
                         <td>{s.name}</td>
-                        <td className="num">{money(s.suggestedMinor!, { whole: true })} לחודש</td>
+                        <td className="num">{money(s.suggestedMinor!, { whole: true })} {L("לחודש", "/ month")}</td>
                         <td style={{ textAlign: "end" }}>
                           <form action={setBudgetAction}>
                             {hidden}
                             <input type="hidden" name="category" value={s.slug} />
                             <input type="hidden" name="limit" value={(Number(s.suggestedMinor) / 100).toFixed(0)} />
-                            <button className="btn" type="submit">הגדרה</button>
+                            <button className="btn" type="submit">{L("הגדרה", "Set")}</button>
                           </form>
                         </td>
                       </tr>
@@ -112,25 +114,25 @@ export default async function BudgetsPage({ searchParams }: { searchParams: Prom
             </section>
           )}
           <form action={setBudgetAction} className="card stack">
-            <h2>תקציב חדש או עדכון</h2>
+            <h2>{L("תקציב חדש או עדכון", "New budget or update")}</h2>
             {hidden}
             <div className="row" style={{ alignItems: "flex-end" }}>
               <div className="field-group" style={{ flex: "2 1 200px" }}>
-                <label htmlFor="category">קטגוריה</label>
+                <label htmlFor="category">{L("קטגוריה", "Category")}</label>
                 <select className="field" id="category" name="category" required defaultValue="">
-                  <option value="" disabled>בחירה…</option>
-                  {cats.map((c) => <option key={c.id} value={c.slug}>{c.nameHe}</option>)}
+                  <option value="" disabled>{L("בחירה…", "Choose…")}</option>
+                  {cats.map((c) => <option key={c.id} value={c.slug}>{categoryName(c.nameHe)}</option>)}
                 </select>
               </div>
               <div className="field-group" style={{ flex: "1 1 140px" }}>
-                <label htmlFor="limit">סכום לחודש (₪)</label>
+                <label htmlFor="limit">{L("סכום לחודש (₪)", "Monthly amount (₪)")}</label>
                 <input className="field num" id="limit" name="limit" inputMode="decimal" required dir="ltr" />
               </div>
               <div className="field-group" style={{ flex: "1 1 120px" }}>
-                <label htmlFor="alert">התראה ב-(%)</label>
+                <label htmlFor="alert">{L("התראה ב-(%)", "Alert at (%)")}</label>
                 <input className="field num" id="alert" name="alert" type="number" min={10} max={100} defaultValue={80} dir="ltr" />
               </div>
-              <button className="btn primary" type="submit">שמירה</button>
+              <button className="btn primary" type="submit">{L("שמירה", "Save")}</button>
             </div>
           </form>
         </>

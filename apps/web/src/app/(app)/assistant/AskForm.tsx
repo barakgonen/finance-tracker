@@ -2,11 +2,11 @@
 
 import { useFormStatus } from "react-dom";
 
-function Submit() {
+function Submit({ labels }: { labels: AskLabels }) {
   const { pending } = useFormStatus();
   return (
     <button className="btn primary" type="submit" disabled={pending}>
-      {pending ? "חושב… (עד דקה)" : "שאלה"}
+      {pending ? labels.thinking : labels.ask}
     </button>
   );
 }
@@ -20,14 +20,22 @@ function Example({ text }: { text: string }) {
   );
 }
 
-export function AskForm({ action, conversationId, examples }: { action: (f: FormData) => Promise<void>; conversationId?: string; examples: string[] }) {
+export interface AskLabels {
+  ask: string;
+  thinking: string;
+  question: string;
+  followUp: string;
+  placeholder: string;
+}
+
+export function AskForm({ action, conversationId, examples, labels }: { action: (f: FormData) => Promise<void>; conversationId?: string; examples: string[]; labels: AskLabels }) {
   return (
     <form action={action} className="card stack">
       {conversationId && <input type="hidden" name="conversationId" value={conversationId} />}
-      <label htmlFor="question">{conversationId ? "שאלת המשך" : "מה תרצו לדעת?"}</label>
-      <textarea id="question" name="question" className="field" rows={3} maxLength={2000} style={{ paddingBlock: 10, resize: "vertical" }} placeholder="למשל: כמה הוצאנו על מסעדות בחצי השנה האחרונה?" />
+      <label htmlFor="question">{conversationId ? labels.followUp : labels.question}</label>
+      <textarea id="question" name="question" className="field" rows={3} maxLength={2000} style={{ paddingBlock: 10, resize: "vertical" }} placeholder={labels.placeholder} />
       <div className="row spread">
-        <Submit />
+        <Submit labels={labels} />
       </div>
       {examples.length > 0 && (
         <div className="row" style={{ "--gap": "8px" } as React.CSSProperties}>

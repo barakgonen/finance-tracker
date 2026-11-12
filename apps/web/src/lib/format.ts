@@ -1,10 +1,16 @@
-const ils = new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 2 });
-const ilsWhole = new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS", maximumFractionDigits: 0 });
+import { L, requestLocale } from "./locale";
 
-/** Minor units (agorot) -> "‏1,234.56 ‏₪". Number conversion is display-only. */
+const formats = (tag: string) => ({
+  ils: new Intl.NumberFormat(tag, { style: "currency", currency: "ILS", maximumFractionDigits: 2 }),
+  whole: new Intl.NumberFormat(tag, { style: "currency", currency: "ILS", maximumFractionDigits: 0 }),
+});
+const FORMATS = { he: formats("he-IL"), en: formats("en-IL") };
+
+/** Minor units (agorot) -> "‏1,234.56 ‏₪" (Hebrew) / "₪1,234.56" (English). Number conversion is display-only. */
 export function money(minor: bigint | number, opts: { whole?: boolean; signed?: boolean } = {}): string {
   const value = Number(minor) / 100;
-  const text = (opts.whole ? ilsWhole : ils).format(Math.abs(value));
+  const f = FORMATS[requestLocale()];
+  const text = (opts.whole ? f.whole : f.ils).format(Math.abs(value));
   if (value < 0) return `−${text}`;
   return opts.signed && value > 0 ? `+${text}` : text;
 }
@@ -33,13 +39,18 @@ export function compactMoney(minor: bigint | number): string {
 export function change(current: bigint, previous: bigint | null): { text: string; dir: "up" | "down" | "flat" | "none" } {
   if (previous === null || previous === 0n) return { text: "—", dir: "none" };
   const ratio = (Number(current) - Number(previous)) / Math.abs(Number(previous));
-  if (Math.abs(ratio) < 0.005) return { text: "ללא שינוי", dir: "flat" };
+  if (Math.abs(ratio) < 0.005) return { text: L("ללא שינוי", "no change"), dir: "flat" };
   return { text: `${ratio > 0 ? "▲" : "▼"} ${Math.round(Math.abs(ratio) * 100)}%`, dir: ratio > 0 ? "up" : "down" };
 }
 
 const HE_MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+const EN_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 export function monthName(month: string, short = false): string {
   const [y, m] = month.split("-").map(Number) as [number, number];
+  if (requestLocale() === "en") {
+    const name = EN_MONTHS[m - 1]!;
+    return short ? name.slice(0, 3) : `${name} ${y}`;
+  }
   const name = HE_MONTHS[m - 1]!;
   return short ? name.slice(0, 3) + "׳" : `${name} ${y}`;
 }

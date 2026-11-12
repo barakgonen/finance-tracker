@@ -6,9 +6,11 @@ import { date, money, monthName } from "@/lib/format";
 import { messages } from "@/lib/i18n";
 import { periodHref, resolvePeriod } from "@/lib/period";
 import { accounts, categories } from "@/lib/queries";
+import { L, categoryName } from "@/lib/locale";
 
 const PAGE = 100;
-const SIDES = { spending: "הוצאות", income: "הכנסות", all: "כל התנועות" } as const;
+const SIDES = ["spending", "income", "all"] as const;
+const sideName = (s: (typeof SIDES)[number]) => ({ spending: L("הוצאות", "Expenses"), income: L("הכנסות", "Income"), all: L("כל התנועות", "All transactions") })[s];
 
 type Params = { month?: string; view?: string; side?: string; category?: string; merchant?: string; account?: string; bill?: string; q?: string; page?: string };
 
@@ -16,7 +18,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
   const viewer = await requireViewer();
   const t = messages(viewer.locale);
   const params = await searchParams;
-  const side = (Object.keys(SIDES) as (keyof typeof SIDES)[]).find((s) => s === params.side) ?? "all";
+  const side = SIDES.find((s) => s === params.side) ?? "all";
   const page = Math.max(1, Number(params.page) || 1);
   const uuid = (v?: string) => (v && /^[0-9a-f-]{36}$/.test(v) ? v : undefined);
 
@@ -48,16 +50,16 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
 
   return (
     <>
-      <h1>{bill ? "תנועות הדוח" : <>תנועות · {monthName(period.month)}</>}</h1>
+      <h1>{bill ? L("תנועות הדוח", "Statement transactions") : <>{L("תנועות", "Transactions")} · {monthName(period.month)}</>}</h1>
       {bill && (
         <section className="banner ok" role="note">
           <span>
             {bill.cardName}
-            {bill.cardLast4 ? <> <span className="num">•••• {bill.cardLast4}</span></> : null} · דוח לחיוב ב-<span className="num">{date(bill.postingDate)}</span> · סה״כ{" "}
+            {bill.cardLast4 ? <> <span className="num">•••• {bill.cardLast4}</span></> : null} · {L("דוח לחיוב ב-", "bill charged on ")}<span className="num">{date(bill.postingDate)}</span> · {L("סה״כ", "total")}{" "}
             <strong className="num">{money(bill.totalMinor)}</strong>
             {" · "}
-            {bill.debitId ? "נגבה מהבנק ונספר פעם אחת: כאן, לפי התנועות." : "עוד לא נמצא חיוב תואם בבנק."}{" "}
-            <Link href={periodHref("/transactions", period, { side })}>חזרה לכל התנועות</Link>
+            {bill.debitId ? L("נגבה מהבנק ונספר פעם אחת: כאן, לפי התנועות.", "Paid from the bank and counted once: here, by its transactions.") : L("עוד לא נמצא חיוב תואם בבנק.", "No matching bank charge found yet.")}{" "}
+            <Link href={periodHref("/transactions", period, { side })}>{L("חזרה לכל התנועות", "Back to all transactions")}</Link>
           </span>
         </section>
       )}
@@ -67,38 +69,38 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
         {keep.merchant && <input type="hidden" name="merchant" value={keep.merchant} />}
         {keep.bill && <input type="hidden" name="bill" value={keep.bill} />}
         <div className="field-group" style={{ flex: "1 1 140px" }}>
-          <label htmlFor="side">סוג</label>
+          <label htmlFor="side">{L("סוג", "Type")}</label>
           <select className="field" id="side" name="side" defaultValue={side}>
-            {Object.entries(SIDES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            {SIDES.map((k) => <option key={k} value={k}>{sideName(k)}</option>)}
           </select>
         </div>
         <div className="field-group" style={{ flex: "1 1 180px" }}>
-          <label htmlFor="category">קטגוריה</label>
+          <label htmlFor="category">{L("קטגוריה", "Category")}</label>
           <select className="field" id="category" name="category" defaultValue={category ?? ""}>
-            <option value="">הכל</option>
-            <option value={UNCATEGORIZED}>ללא קטגוריה</option>
-            {cats.map((c) => <option key={c.id} value={c.slug}>{c.nameHe}</option>)}
+            <option value="">{L("הכל", "All")}</option>
+            <option value={UNCATEGORIZED}>{L("ללא קטגוריה", "Uncategorized")}</option>
+            {cats.map((c) => <option key={c.id} value={c.slug}>{categoryName(c.nameHe)}</option>)}
           </select>
         </div>
         <div className="field-group" style={{ flex: "1 1 160px" }}>
-          <label htmlFor="account">חשבון</label>
+          <label htmlFor="account">{L("חשבון", "Account")}</label>
           <select className="field" id="account" name="account" defaultValue={keep.account ?? ""}>
-            <option value="">הכל</option>
+            <option value="">{L("הכל", "All")}</option>
             {accts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
         <div className="field-group" style={{ flex: "2 1 200px" }}>
-          <label htmlFor="q">חיפוש בתיאור</label>
+          <label htmlFor="q">{L("חיפוש בתיאור", "Search description")}</label>
           <input className="field" id="q" name="q" defaultValue={params.q ?? ""} />
         </div>
-        <button className="btn primary" type="submit">סינון</button>
-        {keep.merchant && <Link className="small" href={periodHref("/transactions", period, { side })}>ניקוי סינון בית עסק</Link>}
+        <button className="btn primary" type="submit">{L("סינון", "Filter")}</button>
+        {keep.merchant && <Link className="small" href={periodHref("/transactions", period, { side })}>{L("ניקוי סינון בית עסק", "Clear merchant filter")}</Link>}
       </form>
 
       <section className="card row spread" aria-live="polite">
-        <span>{result.count} תנועות</span>
+        <span>{result.count} {L("תנועות", "transactions")}</span>
         <span>
-          סה״כ {side === "spending" ? "הוצאות" : side === "income" ? "הכנסות" : "תנועה נטו"}: <strong className="num">{money(total, { signed: side === "all" })}</strong>
+          {side === "spending" ? L("סה״כ הוצאות", "Total expenses") : side === "income" ? L("סה״כ הכנסות", "Total income") : L("סה״כ תנועה נטו", "Net total")}: <strong className="num">{money(total, { signed: side === "all" })}</strong>
         </span>
       </section>
 
@@ -106,7 +108,7 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th scope="col">תאריך</th><th scope="col">תיאור</th><th scope="col">קטגוריה</th><th scope="col">חשבון</th><th scope="col">סכום</th></tr>
+              <tr><th scope="col">{L("תאריך", "Date")}</th><th scope="col">{L("תיאור", "Description")}</th><th scope="col">{L("קטגוריה", "Category")}</th><th scope="col">{L("חשבון", "Account")}</th><th scope="col">{L("סכום", "Amount")}</th></tr>
             </thead>
             <tbody>
               {result.rows.map((r) => (
@@ -114,23 +116,23 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                   <td className="num">{date(r.purchaseDate)}</td>
                   <td>
                     {r.description}
-                    {r.installmentNo ? <span className="muted small"> · תשלום {r.installmentNo}/{r.installmentTotal}</span> : null}
-                    {r.needsReview ? <span className="chip warn" style={{ marginInlineStart: 8 }}>לבדיקה</span> : null}
+                    {r.installmentNo ? <span className="muted small"> · {L("תשלום", "installment")} {r.installmentNo}/{r.installmentTotal}</span> : null}
+                    {r.needsReview ? <span className="chip warn" style={{ marginInlineStart: 8 }}>{L("לבדיקה", "To review")}</span> : null}
                     {paid.get(r.id)?.map((b) => (
                       <div key={b.billId} className="muted small">
                         {b.cardName === null ? (
-                          <>משלם דוח של כרטיס פרטי · <span className="num">{money(b.totalMinor)}</span></>
+                          <>{L("משלם דוח של כרטיס פרטי", "Pays a private card's bill")} · <span className="num">{money(b.totalMinor)}</span></>
                         ) : (
                           <>
-                            משלם את הדוח של {b.cardName}
+                            {L("משלם את הדוח של", "Pays the bill of")} {b.cardName}
                             {b.cardLast4 ? <> <span className="num">•••• {b.cardLast4}</span></> : null} · <span className="num">{money(b.totalMinor)}</span> ·{" "}
-                            <Link href={periodHref("/transactions", period, { bill: b.billId })}>{b.rowCount} תנועות</Link>
+                            <Link href={periodHref("/transactions", period, { bill: b.billId })}>{b.rowCount} {L("תנועות", "transactions")}</Link>
                           </>
                         )}
                       </div>
                     ))}
                   </td>
-                  <td className="small">{r.categoryNameHe ?? t.kinds[r.kind]}</td>
+                  <td className="small">{r.categoryNameHe ? categoryName(r.categoryNameHe) : t.kinds[r.kind]}</td>
                   <td className="small muted">{r.accountName}</td>
                   <td className="num" style={{ textAlign: "end" }}>
                     {money(r.amount, { signed: true })}
@@ -143,10 +145,10 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
         </div>
       </section>
       {pages > 1 && (
-        <nav className="row" aria-label="עמודים" style={{ justifyContent: "center" }}>
-          {page > 1 && <Link className="btn" href={periodHref("/transactions", period, { ...keep, page: String(page - 1) })}>הקודם</Link>}
-          <span className="muted small">עמוד {page} מתוך {pages}</span>
-          {page < pages && <Link className="btn" href={periodHref("/transactions", period, { ...keep, page: String(page + 1) })}>הבא</Link>}
+        <nav className="row" aria-label={L("עמודים", "Pages")} style={{ justifyContent: "center" }}>
+          {page > 1 && <Link className="btn" href={periodHref("/transactions", period, { ...keep, page: String(page - 1) })}>{L("הקודם", "Previous")}</Link>}
+          <span className="muted small">{L("עמוד", "Page")} {page} {L("מתוך", "of")} {pages}</span>
+          {page < pages && <Link className="btn" href={periodHref("/transactions", period, { ...keep, page: String(page + 1) })}>{L("הבא", "Next")}</Link>}
         </nav>
       )}
     </>

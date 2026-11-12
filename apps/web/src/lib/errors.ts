@@ -1,10 +1,12 @@
 // Hebrew wording for the services' error messages (which are English, for logs and tests).
+import { requestLocale } from "./locale";
 const EXACT: Record<string, string> = {
   "A committed import can't be discarded": "אי אפשר לבטל ייבוא שכבר הושלם.",
   "Can't merge a merchant into itself": "אי אפשר לאחד בית עסק עם עצמו.",
   "Card number must be exactly 4 digits": "יש להזין בדיוק 4 ספרות אחרונות של הכרטיס.",
   "Choose a spending category": "יש לבחור קטגוריית הוצאה.",
   "This charge no longer matches that card bill": "החיוב הזה כבר לא תואם לדוח הכרטיס. ייתכן שכבר טופל.",
+  "Enter a target amount": "יש להזין סכום יעד.",
   "Only money coming in can be income": "רק כסף שנכנס לחשבון יכול להיות הכנסה.",
   email_taken: "האימייל הזה כבר רשום.",
   "Give the goal a name": "יש לתת שם ליעד.",
@@ -43,8 +45,23 @@ const PATTERNS: [RegExp, (m: RegExpMatchArray) => string][] = [
 
 const HEBREW = /[֐-׿]/;
 
-/** The Hebrew message for a service error (Hebrew messages pass through; unknown ones get a generic text). */
+// the few error codes that aren't already an English sentence
+const ENGLISH_CODES: Record<string, string> = {
+  missing: "Please fill in all fields as required.",
+  email_taken: "This email is already registered.",
+};
+
+/**
+ * The message for a service error in the request's language: Hebrew from the maps below; in
+ * English the service's own message (they are English sentences). Unknown errors get a generic text.
+ */
 export function hebrewError(message: string | null | undefined): string {
+  if (requestLocale() === "en") {
+    if (!message) return "Something went wrong. Try again.";
+    if (ENGLISH_CODES[message]) return ENGLISH_CODES[message]!;
+    const known = message in EXACT || PATTERNS.some(([re]) => re.test(message));
+    return known ? message : "Something went wrong. Try again.";
+  }
   if (!message) return "משהו השתבש. נסו שוב.";
   if (EXACT[message]) return EXACT[message]!;
   for (const [re, fn] of PATTERNS) {

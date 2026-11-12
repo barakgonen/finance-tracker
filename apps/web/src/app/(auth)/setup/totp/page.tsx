@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import QRCode from "qrcode";
 import { appUser } from "@ft/db";
-import { currentSession } from "@/lib/auth";
+import { authLocale, currentSession } from "@/lib/auth";
 import { decryptSecret, encryptSecret, totp } from "@/lib/auth-core";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
@@ -27,7 +27,7 @@ export default async function TotpSetupPage({ searchParams }: { searchParams: Pr
     await db().update(appUser).set({ totpSecretEnc: encryptSecret(env.encryptionKey, secret) }).where(eq(appUser.id, s.user.id));
   }
   const qr = await QRCode.toDataURL(totp.uri(s.user.email, secret), { margin: 1, width: 200 });
-  const t = messages();
+  const t = messages(await authLocale());
   return (
     <main className="auth">
       <div className="card">

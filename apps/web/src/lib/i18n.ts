@@ -1,6 +1,8 @@
 import { he, type Messages } from "../messages/he";
+import { en } from "../messages/en";
+import { asLocale } from "./locale";
 
-/** Hebrew is the primary language; other locales fall back to it until translated. */
-export function messages(_locale = "he"): Messages {
-  return he;
+/** Hebrew is the primary language; English has the same keys (checked by the Messages type). */
+export function messages(locale = "he"): Messages {
+  return asLocale(locale) === "en" ? en : he;
 }

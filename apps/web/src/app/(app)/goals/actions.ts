@@ -20,7 +20,7 @@ export async function createGoalAction(form: FormData): Promise<void> {
       let goal: NewGoal;
       if (type === "save_amount") {
         const target = parseShekels(form.get("target"));
-        if (!target) throw new ImportError("bad_state", "יש להזין סכום יעד");
+        if (!target) throw new ImportError("bad_state", "Enter a target amount");
         goal = { type, name, targetAmountMinor: target, deadline: String(form.get("deadline") ?? "") || null };
       } else if (type === "savings_rate") {
         goal = { type, name, targetRate: Number(form.get("rate")) / 100 };

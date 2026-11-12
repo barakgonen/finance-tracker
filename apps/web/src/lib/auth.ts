@@ -6,6 +6,7 @@ import { appUser, householdMember, session } from "@ft/db";
 import { db, scope } from "./db";
 import { env } from "./env";
 import { AttemptLimiter, hashToken, newSessionToken } from "./auth-core";
+import { asLocale, LOCALE_COOKIE, setRequestLocale, type Locale } from "./locale";
 
 const COOKIE = "ft_session";
 const SESSION_DAYS = 7;
@@ -81,6 +82,7 @@ export async function requireViewer(): Promise<Viewer> {
     tx.select().from(householdMember).where(eq(householdMember.userId, s.user.id)),
   );
   if (!member) redirect("/login");
+  setRequestLocale(s.user.locale);
   return {
     userId: s.user.id,
     displayName: s.user.displayName,
@@ -105,6 +107,17 @@ export async function requireAdmin(): Promise<Viewer> {
   const v = await requireViewer();
   if (v.role !== "admin") throw new Error("Only a household admin can do this");
   return v;
+}
+
+/**
+ * The language for pages before or around sign-in: the signed-in user's choice, else the last
+ * choice made in this browser, else Hebrew.
+ */
+export async function authLocale(): Promise<Locale> {
+  const s = await currentSession();
+  const locale = asLocale(s?.user.locale ?? (await cookies()).get(LOCALE_COOKIE)?.value);
+  setRequestLocale(locale);
+  return locale;
 }
 
 /** The viewer's household scope, for scope(). */

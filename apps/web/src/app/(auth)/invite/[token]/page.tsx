@@ -1,4 +1,5 @@
 import { findInvitation, hashInviteToken } from "@ft/ingest";
+import { authLocale } from "@/lib/auth";
 import { scope } from "@/lib/db";
 import { messages } from "@/lib/i18n";
 import { AuthForm } from "../../AuthForm";
@@ -8,7 +9,7 @@ export default async function InvitePage({ params, searchParams }: { params: Pro
   const { token: raw } = await params;
   const { error } = await searchParams;
   const token = decodeURIComponent(raw);
-  const t = messages();
+  const t = messages(await authLocale());
   const invite = /^[A-Za-z0-9_-]{20,100}$/.test(token)
     ? await scope({ inviteTokenHash: hashInviteToken(token) }, (tx) => findInvitation(tx, token))
     : null;

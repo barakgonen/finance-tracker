@@ -12,6 +12,7 @@ import { change, date, money, monthName, percent } from "@/lib/format";
 import { messages } from "@/lib/i18n";
 import { lastNMonths, periodHref, resolvePeriod } from "@/lib/period";
 import { reviewCount } from "@/lib/queries";
+import { L, categoryName } from "@/lib/locale";
 
 function Kpi({ label, value, swatch, delta, upIsGood }: { label: string; value: string; swatch?: string; delta?: { text: string; dir: string }; upIsGood?: boolean }) {
   const tone = !delta || delta.dir === "none" || delta.dir === "flat" ? "muted" : (delta.dir === "up") === upIsGood ? "delta-down" : "delta-up";
@@ -22,7 +23,7 @@ function Kpi({ label, value, swatch, delta, upIsGood }: { label: string; value: 
         {label}
       </span>
       <span className="kpi">{value}</span>
-      {delta && <span className={`small ${tone}`}>{delta.text} <span className="muted">מהחודש הקודם</span></span>}
+      {delta && <span className={`small ${tone}`}>{delta.text} <span className="muted">{L("מהחודש הקודם", "vs. last month")}</span></span>}
     </div>
   );
 }
@@ -81,28 +82,28 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               </span>
             </div>
           )}
-          <section className="grid" aria-label="סיכום החודש">
+          <section className="grid" aria-label={L("סיכום החודש", "Month summary")}>
             <Kpi label={t.dashboard.income} swatch={SERIES.income} value={money(cur.incomeMinor, { whole: true })} delta={change(cur.incomeMinor, prev.transactionCount ? prev.incomeMinor : null)} upIsGood />
             <Kpi label={t.dashboard.expenses} swatch={SERIES.expenses} value={money(cur.expensesMinor, { whole: true })} delta={change(cur.expensesMinor, prev.transactionCount ? prev.expensesMinor : null)} upIsGood={false} />
             <Kpi label={t.dashboard.net} value={money(cur.netMinor, { whole: true, signed: true })} />
             <Kpi
               label={t.dashboard.savingsRate}
               value={rate === null ? "—" : percent(rate)}
-              delta={rate !== null && prevRate !== null ? { text: `${rate >= prevRate ? "▲" : "▼"} ${Math.abs(Math.round((rate - prevRate) * 100))} נק׳`, dir: rate >= prevRate ? "up" : "down" } : undefined}
+              delta={rate !== null && prevRate !== null ? { text: `${rate >= prevRate ? "▲" : "▼"} ${Math.abs(Math.round((rate - prevRate) * 100))} ${L("נק׳", "pts")}`, dir: rate >= prevRate ? "up" : "down" } : undefined}
               upIsGood
             />
             <Link href={periodHref("/health", period)} className="card stack" style={{ "--gap": "6px", textDecoration: "none", color: "inherit" } as React.CSSProperties}>
-              <span className="muted small">בריאות פיננסית</span>
+              <span className="muted small">{L("בריאות פיננסית", "Financial health")}</span>
               <span className="kpi">{health.total === null ? "—" : <>{health.total}<span className="muted small"> / 100</span></>}</span>
-              <span className="small" style={{ color: "var(--accent)" }}>{health.total === null ? "אין עדיין מספיק נתונים" : "איך זה מחושב?"}</span>
+              <span className="small" style={{ color: "var(--accent)" }}>{health.total === null ? L("אין עדיין מספיק נתונים", "Not enough data yet") : L("איך זה מחושב?", "How is this calculated?")}</span>
             </Link>
           </section>
 
           {insights.length > 0 && (
             <section className="stack" aria-labelledby="ins-h">
               <div className="row spread">
-                <h2 id="ins-h">מה כדאי לדעת החודש</h2>
-                <Link className="small" href={periodHref("/insights", period)}>כל התובנות ({insights.length})</Link>
+                <h2 id="ins-h">{L("מה כדאי לדעת החודש", "Worth knowing this month")}</h2>
+                <Link className="small" href={periodHref("/insights", period)}>{L("כל התובנות", "All insights")} ({insights.length})</Link>
               </div>
               <div className="grid">
                 {insights.slice(0, 3).map((i) => (
@@ -115,11 +116,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           {hasHistory && (
             <section className="card stack">
               <div className="row spread">
-                <h2>הכנסות מול הוצאות</h2>
-                <Link className="small" href={periodHref("/cashflow", period)}>תזרים מלא</Link>
+                <h2>{L("הכנסות מול הוצאות", "Income vs. expenses")}</h2>
+                <Link className="small" href={periodHref("/cashflow", period)}>{L("תזרים מלא", "Full cash flow")}</Link>
               </div>
               <ColumnChart
-                title="הכנסות והוצאות לפי חודש"
+                title={L("הכנסות והוצאות לפי חודש", "Income and expenses by month")}
                 labels={shown.map((m) => monthName(m.month, true))}
                 fullLabels={shown.map((m) => monthName(m.month))}
                 series={[
@@ -134,15 +135,15 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <section className="card stack" style={{ flex: "3 1 420px" }}>
               <div className="row spread">
                 <h2>{t.dashboard.byCategory}</h2>
-                <Link className="small" href={periodHref("/expenses", period)}>פירוט מלא</Link>
+                <Link className="small" href={periodHref("/expenses", period)}>{L("פירוט מלא", "Full breakdown")}</Link>
               </div>
               <BarList
                 color={SERIES.expenses}
-                valueName="החודש"
-                referenceName="ממוצע 3 חודשים קודמים"
+                valueName={L("החודש", "This month")}
+                referenceName={L("ממוצע 3 חודשים קודמים", "Average of the previous 3 months")}
                 rows={categories.filter((c) => c.minor > 0n).slice(0, 8).map((c) => ({
                   key: c.slug,
-                  label: c.nameHe,
+                  label: categoryName(c.nameHe),
                   href: tx({ side: "spending", category: c.slug }),
                   value: c.minor,
                   reference: c.avg3Minor,
@@ -153,12 +154,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             </section>
             <div className="stack" style={{ flex: "2 1 300px" }}>
               <section className="card stack">
-                <h2>בתי עסק מובילים</h2>
+                <h2>{L("בתי עסק מובילים", "Top merchants")}</h2>
                 <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, "--gap": "10px" } as React.CSSProperties}>
                   {merchants.map((m) => (
                     <li key={m.merchantId} className="row spread small">
                       <Link href={`/merchants/${m.merchantId}`}>{m.name}</Link>
-                      <Link href={tx({ side: "spending", merchant: m.merchantId })} className="num" style={{ color: "inherit" }}>{money(m.minor, { whole: true })} <span className="muted">· {m.count} עסקאות</span></Link>
+                      <Link href={tx({ side: "spending", merchant: m.merchantId })} className="num" style={{ color: "inherit" }}>{money(m.minor, { whole: true })} <span className="muted">· {m.count} {L("עסקאות", "purchases")}</span></Link>
                     </li>
                   ))}
                 </ul>
@@ -166,13 +167,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               {alerts.length > 0 && (
                 <section className="card stack">
                   <div className="row spread">
-                    <h2>תקציבים שדורשים תשומת לב</h2>
-                    <Link className="small" href={periodHref("/budgets", period)}>כל התקציבים</Link>
+                    <h2>{L("תקציבים שדורשים תשומת לב", "Budgets that need attention")}</h2>
+                    <Link className="small" href={periodHref("/budgets", period)}>{L("כל התקציבים", "All budgets")}</Link>
                   </div>
                   <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, "--gap": "10px" } as React.CSSProperties}>
                     {alerts.map((b) => (
                       <li key={b.id} className="row spread small">
-                        <span>{b.categoryName} <span className={`chip ${BUDGET_STATE[b.status.state].tone}`}>{BUDGET_STATE[b.status.state].icon} {BUDGET_STATE[b.status.state].label}</span></span>
+                        <span>{categoryName(b.categoryName)} <span className={`chip ${BUDGET_STATE[b.status.state].tone}`}>{BUDGET_STATE[b.status.state].icon} {BUDGET_STATE[b.status.state].label}</span></span>
                         <span className="num">{money(b.status.spentMinor, { whole: true })} / {money(b.status.limitMinor, { whole: true })}</span>
                       </li>
                     ))}
@@ -182,8 +183,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               {soon.length > 0 && (
                 <section className="card stack">
                   <div className="row spread">
-                    <h2>חיובים צפויים · 14 יום</h2>
-                    <Link className="small" href={periodHref("/recurring", period)}>הכל</Link>
+                    <h2>{L("חיובים צפויים · 14 יום", "Upcoming charges · 14 days")}</h2>
+                    <Link className="small" href={periodHref("/recurring", period)}>{L("הכל", "All")}</Link>
                   </div>
                   <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, "--gap": "10px" } as React.CSSProperties}>
                     {soon.map((s) => (
@@ -204,14 +205,14 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           </div>
 
           <section className="card stack">
-            <h2>התנועות הגדולות החודש</h2>
+            <h2>{L("התנועות הגדולות החודש", "Largest transactions this month")}</h2>
             <div className="table-wrap">
               <table>
                 <tbody>
                   {largest.map((l) => (
                     <tr key={l.id}>
                       <td className="num">{date(l.purchaseDate)}</td>
-                      <td>{l.description}{l.needsReview ? <span className="chip warn" style={{ marginInlineStart: 8 }}>לבדיקה</span> : null}</td>
+                      <td>{l.description}{l.needsReview ? <span className="chip warn" style={{ marginInlineStart: 8 }}>{L("לבדיקה", "To review")}</span> : null}</td>
                       <td className="muted small">{t.kinds[l.kind]}</td>
                       <td className="num" style={{ textAlign: "end" }}>{money(l.amount, { signed: true })}</td>
                     </tr>

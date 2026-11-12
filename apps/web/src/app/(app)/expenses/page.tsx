@@ -6,11 +6,12 @@ import { householdScope, requireViewer } from "@/lib/auth";
 import { scope } from "@/lib/db";
 import { change, money, percent } from "@/lib/format";
 import { periodHref, resolvePeriod } from "@/lib/period";
+import { L, categoryName } from "@/lib/locale";
 
 const TABS = [
-  { id: "categories", label: "לפי קטגוריה" },
-  { id: "merchants", label: "לפי בית עסק" },
-  { id: "days", label: "לפי יום" },
+  { id: "categories", get label() { return L("לפי קטגוריה", "By category"); } },
+  { id: "merchants", get label() { return L("לפי בית עסק", "By merchant"); } },
+  { id: "days", get label() { return L("לפי יום", "By day"); } },
 ] as const;
 
 function Delta({ current, base }: { current: bigint; base: bigint | null }) {
@@ -37,12 +38,12 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <ScopeBar path="/expenses" period={period} title="הוצאות" />
+      <ScopeBar path="/expenses" period={period} title={L("הוצאות", "Expenses")} />
       <section className="card row spread">
-        <span>סה״כ הוצאות החודש</span>
+        <span>{L("סה״כ הוצאות החודש", "Total expenses this month")}</span>
         <span className="kpi">{money(totals.expensesMinor, { whole: true })}</span>
       </section>
-      <nav className="tabs" aria-label="תצוגת הוצאות">
+      <nav className="tabs" aria-label={L("תצוגת הוצאות", "Expenses view")}>
         {TABS.map((x) => (
           <Link key={x.id} href={periodHref("/expenses", period, { tab: x.id })} aria-current={tab === x.id ? "page" : undefined}>{x.label}</Link>
         ))}
@@ -54,14 +55,14 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
             <table>
               <thead>
                 <tr>
-                  <th scope="col">קטגוריה</th><th scope="col">החודש</th><th scope="col">חלק</th><th scope="col">עסקאות</th>
-                  <th scope="col">החודש הקודם</th><th scope="col">מול חודש קודם</th><th scope="col">ממוצע 3 חודשים</th><th scope="col">מול הממוצע</th>
+                  <th scope="col">{L("קטגוריה", "Category")}</th><th scope="col">{L("החודש", "This month")}</th><th scope="col">{L("חלק", "Share")}</th><th scope="col">{L("עסקאות", "Purchases")}</th>
+                  <th scope="col">{L("החודש הקודם", "Last month")}</th><th scope="col">{L("מול חודש קודם", "vs. last month")}</th><th scope="col">{L("ממוצע 3 חודשים", "3-month average")}</th><th scope="col">{L("מול הממוצע", "vs. average")}</th>
                 </tr>
               </thead>
               <tbody>
                 {data.categories.map((c) => (
                   <tr key={c.slug}>
-                    <td><Link href={tx({ category: c.slug })}>{c.nameHe}</Link></td>
+                    <td><Link href={tx({ category: c.slug })}>{categoryName(c.nameHe)}</Link></td>
                     <td className="num">{money(c.minor, { whole: true })}</td>
                     <td className="num">{percent(c.share)}</td>
                     <td className="num">{c.count}</td>
@@ -82,7 +83,7 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th scope="col">בית עסק</th><th scope="col">החודש</th><th scope="col">עסקאות</th><th scope="col">ממוצע לעסקה</th><th scope="col">החודש הקודם</th><th scope="col">שינוי</th></tr>
+                <tr><th scope="col">{L("בית עסק", "Merchant")}</th><th scope="col">{L("החודש", "This month")}</th><th scope="col">{L("עסקאות", "Purchases")}</th><th scope="col">{L("ממוצע לעסקה", "Average purchase")}</th><th scope="col">{L("החודש הקודם", "Last month")}</th><th scope="col">{L("שינוי", "Change")}</th></tr>
               </thead>
               <tbody>
                 {data.merchants.map((m) => (
@@ -103,15 +104,15 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
 
       {tab === "days" && (
         <section className="card stack">
-          <h2>הוצאות לפי יום</h2>
+          <h2>{L("הוצאות לפי יום", "Spending by day")}</h2>
           <ColumnChart
-            title="הוצאות לפי יום בחודש"
+            title={L("הוצאות לפי יום בחודש", "Spending by day of the month")}
             labels={data.days.map((d) => d.date.slice(8))}
             fullLabels={data.days.map((d) => `${d.date.slice(8)}.${d.date.slice(5, 7)}`)}
-            series={[{ name: "הוצאות", color: SERIES.expenses, values: data.days.map((d) => d.minor) }]}
+            series={[{ name: L("הוצאות", "Expenses"), color: SERIES.expenses, values: data.days.map((d) => d.minor) }]}
             colorBySign={[SERIES.expenses, SERIES.income]}
           />
-          <p className="muted small" style={{ margin: 0 }}>ימים מתחת לאפס הם ימים שבהם התקבלו החזרים גדולים מההוצאות.</p>
+          <p className="muted small" style={{ margin: 0 }}>{L("ימים מתחת לאפס הם ימים שבהם התקבלו החזרים גדולים מההוצאות.", "Days below zero are days when refunds were larger than spending.")}</p>
         </section>
       )}
     </>

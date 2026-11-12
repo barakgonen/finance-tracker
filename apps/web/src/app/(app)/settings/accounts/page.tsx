@@ -8,16 +8,17 @@ import { messages } from "@/lib/i18n";
 import { accounts, members } from "@/lib/queries";
 import { addAccountAction, updateAccountAction } from "./actions";
 import { addMemberAction, createInviteAction, revokeInviteAction } from "./invite-actions";
+import { L } from "@/lib/locale";
 
 const INSTITUTIONS = [
-  { id: "leumi", he: "בנק לאומי" },
-  { id: "hapoalim", he: "בנק הפועלים" },
-  { id: "discount", he: "בנק דיסקונט" },
-  { id: "mizrahi", he: "מזרחי טפחות" },
-  { id: "isracard", he: "ישראכרט" },
-  { id: "cal", he: "כאל" },
-  { id: "max", he: "מקס" },
-  { id: "other", he: "אחר" },
+  { id: "leumi", he: "בנק לאומי", en: "Bank Leumi" },
+  { id: "hapoalim", he: "בנק הפועלים", en: "Bank Hapoalim" },
+  { id: "discount", he: "בנק דיסקונט", en: "Discount Bank" },
+  { id: "mizrahi", he: "מזרחי טפחות", en: "Mizrahi Tefahot" },
+  { id: "isracard", he: "ישראכרט", en: "Isracard" },
+  { id: "cal", he: "כאל", en: "Cal" },
+  { id: "max", he: "מקס", en: "Max" },
+  { id: "other", he: "אחר", en: "Other" },
 ];
 
 type Account = Awaited<ReturnType<typeof accounts>>[number];
@@ -44,7 +45,7 @@ function AccountFields({ a, people, banks, t }: { a?: Account; people: Member[];
         <div className="field-group">
           <label htmlFor={`inst-${id}`}>{t.accounts.institution}</label>
           <select className="field" id={`inst-${id}`} name="institution" defaultValue={a?.institution ?? "isracard"}>
-            {INSTITUTIONS.map((i) => <option key={i.id} value={i.id}>{i.he}</option>)}
+            {INSTITUTIONS.map((i) => <option key={i.id} value={i.id}>{L(i.he, i.en)}</option>)}
           </select>
         </div>
         <div className="field-group">
@@ -195,8 +196,8 @@ export default async function AccountsPage({
                 <span className="muted small">{t.accountTypes[a.type]} · {ownerName(a.ownerMemberId)}</span>
               </span>
               <span className="row" style={{ "--gap": "6px" } as React.CSSProperties}>
-                {a.type === "credit_card" && (a.tracksStatements ? <span className="chip ok">דוחות מיובאים</span> : <span className="chip">לא מפורט</span>)}
-                {a.visibility === "private" && <span className="chip">פרטי</span>}
+                {a.type === "credit_card" && (a.tracksStatements ? <span className="chip ok">{L("דוחות מיובאים", "Statements imported")}</span> : <span className="chip">{L("לא מפורט", "Not itemized")}</span>)}
+                {a.visibility === "private" && <span className="chip">{L("פרטי", "Private")}</span>}
               </span>
             </summary>
             {!readOnly && (

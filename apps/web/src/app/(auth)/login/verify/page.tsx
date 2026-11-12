@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { currentSession } from "@/lib/auth";
+import { authLocale, currentSession } from "@/lib/auth";
 import { messages } from "@/lib/i18n";
 import { AuthForm } from "../../AuthForm";
 import { verifyTotpAction } from "../../actions";
@@ -10,7 +10,7 @@ export default async function VerifyPage({ searchParams }: { searchParams: Promi
   if (!s) redirect("/login");
   if (!s.user.totpConfirmedAt) redirect("/setup/totp");
   if (s.session.totpVerified) redirect("/");
-  const t = messages();
+  const t = messages(await authLocale());
   return (
     <main className="auth">
       <div className="card">

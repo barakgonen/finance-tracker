@@ -11,12 +11,21 @@ import { date, money } from "@/lib/format";
 import { messages } from "@/lib/i18n";
 import { accounts, canSeeDetails, categories } from "@/lib/queries";
 import { commitAction, discardAction } from "../actions";
+import { isRtl, L, categoryName } from "@/lib/locale";
 
 const COMMIT_ERRORS: Record<string, string> = {
-  no_account: "יש לבחור חשבון לפני הייבוא.",
-  unreconciled: "הסכומים לא תואמים. כדי לייבא בכל זאת יש לכתוב סיבה.",
-  account_mismatch: "סוג הדוח לא מתאים לחשבון שנבחר (בנק מול כרטיס).",
-  bad_state: "הייבוא הזה כבר טופל.",
+  get no_account() {
+    return L("יש לבחור חשבון לפני הייבוא.", "Choose an account before importing.");
+  },
+  get unreconciled() {
+    return L("הסכומים לא תואמים. כדי לייבא בכל זאת יש לכתוב סיבה.", "The totals don't match. To import anyway, write a reason.");
+  },
+  get account_mismatch() {
+    return L("סוג הדוח לא מתאים לחשבון שנבחר (בנק מול כרטיס).", "The statement type doesn't fit the chosen account (bank vs. card).");
+  },
+  get bad_state() {
+    return L("הייבוא הזה כבר טופל.", "This import was already handled.");
+  },
 };
 
 export default async function PreviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string; reprocessed?: string }> }) {
@@ -49,14 +58,14 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
   const { preview, hidden, bills, accts, cats, parserVersion } = data;
   const installed = preview.adapter ? currentParserVersion(preview.adapter) : null;
   const outdated = (preview.status === "committed" || preview.status === "parsed") && installed !== null && (parserVersion ?? 0) < installed;
-  const catName = new Map(cats.map((c) => [c.slug, c.nameHe]));
+  const catName = new Map(cats.map((c) => [c.slug, categoryName(c.nameHe)]));
   const rec = preview.reconciliation;
   const canEdit = viewer.role !== "viewer" && preview.status === "parsed";
   const toCommit = preview.counts.new + preview.counts.supersedesPending;
 
   return (
     <>
-      <Link href="/import" className="small" style={{ textDecoration: "none" }}>→ {t.import.history}</Link>
+      <Link href="/import" className="small" style={{ textDecoration: "none" }}>{isRtl() ? "→" : "←"} {t.import.history}</Link>
       <h1>{t.import.previewTitle}</h1>
 
       <section className="card row">
@@ -69,15 +78,15 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
       </section>
 
       {error && <div role="alert" className="banner warn">{COMMIT_ERRORS[error] ?? t.errors.generic}</div>}
-      {reprocessed && <div role="status" className="banner ok">הקובץ עובד מחדש בגרסה החדשה של המפענח.</div>}
+      {reprocessed && <div role="status" className="banner ok">{L("הקובץ עובד מחדש בגרסה החדשה של המפענח.", "The file was re-processed with the new parser version.")}</div>}
       {outdated && (
         <div role="note" className="banner warn">
           <span>
-            קיימת גרסה חדשה של המפענח לקובץ הזה. <Link href={`/import/${preview.importId}/reprocess`}>בדיקת עיבוד מחדש</Link>
+            {L("קיימת גרסה חדשה של המפענח לקובץ הזה.", "A newer parser version is available for this file.")} <Link href={`/import/${preview.importId}/reprocess`}>{L("בדיקת עיבוד מחדש", "Check re-processing")}</Link>
           </span>
         </div>
       )}
-      {hidden && <div role="note" className="banner ok">זה חשבון פרטי של חבר/ה אחר/ת במשק הבית: רואים כאן רק את הסיכום, בלי התנועות.</div>}
+      {hidden && <div role="note" className="banner ok">{L("זה חשבון פרטי של חבר/ה אחר/ת במשק הבית: רואים כאן רק את הסיכום, בלי התנועות.", "This is another household member's private account: only the summary is shown here, without transactions.")}</div>}
       {preview.error && <div role="alert" className="banner error">{t.import.failed}: {preview.error}</div>}
 
       {rec && (
@@ -86,18 +95,18 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
             <strong>{rec.ok ? t.import.verified : t.import.notVerified}</strong>
             {rec.checks.map((c) => (
               <span key={c.label} className="small">
-                {c.label.startsWith("running balance") ? "רצף היתרות בדוח" : c.label}:{" "}
-                {c.ok ? "תואם" : <>צפוי <span className="num">{money(c.expectedMinor)}</span>, נמצא <span className="num">{money(c.actualMinor)}</span></>}
+                {c.label.startsWith("running balance") ? L("רצף היתרות בדוח", "Running balance in the statement") : c.label}:{" "}
+                {c.ok ? L("תואם", "matches") : <>{L("צפוי", "expected")} <span className="num">{money(c.expectedMinor)}</span>, {L("נמצא", "found")} <span className="num">{money(c.actualMinor)}</span></>}
               </span>
             ))}
-            {rec.problems.length > 0 && rec.checks.length === 0 && <span className="small">אין בדוח סכומים מודפסים לבדיקה.</span>}
+            {rec.problems.length > 0 && rec.checks.length === 0 && <span className="small">{L("אין בדוח סכומים מודפסים לבדיקה.", "The statement has no printed totals to check.")}</span>}
           </div>
         </section>
       )}
 
       {bills.length > 0 && (
         <section className="card stack" aria-labelledby="bank-side" style={{ "--gap": "6px" } as React.CSSProperties}>
-          <h2 id="bank-side">החיוב בבנק</h2>
+          <h2 id="bank-side">{L("החיוב בבנק", "Bank charge")}</h2>
           {bills.map((b) => (
             <div key={b.billId} className="row spread small">
               <span>
@@ -105,21 +114,21 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
               </span>
               {b.debit ? (
                 <span>
-                  <span className="chip ok">נמצא בבנק</span> {b.debit.accountName}, <span className="num">{date(b.debit.date)}</span>
-                  {b.debit.billsPaid > 1 ? <>, בחיוב אחד של <span className="num">{money(-b.debit.amountMinor)}</span> יחד עם עוד {b.debit.billsPaid - 1} דוחות</> : null} ·{" "}
-                  <Link href={`/transactions?month=${b.postingDate.slice(0, 7)}&bill=${b.billId}`}>התנועות</Link>
+                  <span className="chip ok">{L("נמצא בבנק", "Found in the bank")}</span> {b.debit.accountName}, <span className="num">{date(b.debit.date)}</span>
+                  {b.debit.billsPaid > 1 ? <>, {L("בחיוב אחד של", "in one charge of")} <span className="num">{money(-b.debit.amountMinor)}</span> {L(`יחד עם עוד ${b.debit.billsPaid - 1} דוחות`, `together with ${b.debit.billsPaid - 1} more bills`)}</> : null} ·{" "}
+                  <Link href={`/transactions?month=${b.postingDate.slice(0, 7)}&bill=${b.billId}`}>{L("התנועות", "Transactions")}</Link>
                 </span>
               ) : (
-                <span className="muted"><span className="chip">עוד לא בבנק</span> יקושר אוטומטית כשתנועות הבנק של החודש ייובאו</span>
+                <span className="muted"><span className="chip">{L("עוד לא בבנק", "Not in the bank yet")}</span> {L("יקושר אוטומטית כשתנועות הבנק של החודש ייובאו", "Will be linked automatically when the month's bank transactions are imported")}</span>
               )}
             </div>
           ))}
-          <p className="muted small" style={{ margin: 0 }}>החיוב בבנק לא נספר כהוצאה: ההוצאה נספרת פעם אחת, לפי התנועות בדוח.</p>
+          <p className="muted small" style={{ margin: 0 }}>{L("החיוב בבנק לא נספר כהוצאה: ההוצאה נספרת פעם אחת, לפי התנועות בדוח.", "The bank charge isn't counted as spending: spending is counted once, by the statement's transactions.")}</p>
         </section>
       )}
 
       {preview.rows.length > 0 && (
-        <section className="grid" aria-label="סיכום שורות">
+        <section className="grid" aria-label={L("סיכום שורות", "Row summary")}>
           <div className="card stack" style={{ "--gap": "4px" } as React.CSSProperties}><span className="muted small">{t.import.counts.new}</span><span className="kpi num">{preview.counts.new}</span></div>
           <div className="card stack" style={{ "--gap": "4px" } as React.CSSProperties}><span className="muted small">{t.import.counts.duplicate}</span><span className="kpi num muted">{preview.counts.duplicate}</span></div>
           <div className="card stack" style={{ "--gap": "4px" } as React.CSSProperties}><span className="muted small">{t.import.counts.supersedes}</span><span className="kpi num">{preview.counts.supersedesPending}</span></div>
@@ -157,7 +166,7 @@ export default async function PreviewPage({ params, searchParams }: { params: Pr
       )}
 
       {preview.rows.length > 0 && (
-        <section className="card" style={{ padding: "6px 4px" }} aria-label="שורות הדוח">
+        <section className="card" style={{ padding: "6px 4px" }} aria-label={L("שורות הדוח", "Statement rows")}>
           <div className="table-wrap">
             <table>
               <thead>

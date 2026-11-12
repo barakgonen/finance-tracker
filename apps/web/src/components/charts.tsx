@@ -1,8 +1,9 @@
 // Server-rendered SVG charts following the data-viz rules: thin columns (<= 24px) with 4px rounded
 // data-ends, 2px surface gaps, hairline solid grid, text in ink tokens (never the series color),
 // a legend for >= 2 series, a hover/focus readout per month, and a table view for every chart.
-// Time runs right to left, matching the RTL page.
+// Time runs with the reading direction: right to left in Hebrew, left to right in English.
 import { compactMoney, money } from "@/lib/format";
+import { isRtl, L } from "@/lib/locale";
 
 export interface Series {
   name: string;
@@ -57,6 +58,7 @@ export function ColumnChart({
   const top = Math.ceil(max / step) * step || step;
   const bottom = Math.floor(min / step) * step;
   const k = series.length;
+  const rtl = isRtl();
   const ticks: number[] = [];
   for (let t = bottom; t <= top + 1e-9; t += step) ticks.push(t);
   const names = fullLabels ?? labels;
@@ -70,7 +72,9 @@ export function ColumnChart({
     const groupW = plotW / n;
     const barW = Math.max(2, Math.min(24, (groupW - 6) / k - 2));
     const groupContent = k * barW + (k - 1) * 2;
-    // index 0 (oldest) sits at the right edge, next to the y-axis labels
+    // drawn right to left (index 0, the oldest, at the right edge next to the y-axis labels);
+    // in a left-to-right language every box is mirrored onto the other side
+    const left = (x: number, w = 0) => (rtl ? x : W - x - w);
     const groupX = (i: number) => PAD.start + plotW - (i + 1) * groupW;
     // a label needs ~30 units; with narrower columns, label every few (always the newest)
     const every = Math.ceil(30 / groupW);
@@ -78,8 +82,8 @@ export function ColumnChart({
           <svg viewBox={`0 0 ${W} ${height}`} role="img" aria-label={title} className={className} style={{ inlineSize: "100%", blockSize: "auto" }}>
             {ticks.map((t) => (
               <g key={t}>
-                <line x1={PAD.start} x2={PAD.start + plotW} y1={y(t)} y2={y(t)} className={t === 0 ? "chart-axis" : "chart-grid"} strokeWidth={1} />
-                <text x={W - 4} y={y(t) + 4} textAnchor="end" fontSize={11} className="chart-label" style={{ fontVariantNumeric: "tabular-nums", direction: "ltr" }}>
+                <line x1={left(PAD.start)} x2={left(PAD.start + plotW)} y1={y(t)} y2={y(t)} className={t === 0 ? "chart-axis" : "chart-grid"} strokeWidth={1} />
+                <text x={rtl ? W - 4 : 4} y={y(t) + 4} textAnchor={rtl ? "end" : "start"} fontSize={11} className="chart-label" style={{ fontVariantNumeric: "tabular-nums", direction: "ltr" }}>
                   {compactMoney(t)}
                 </text>
               </g>
@@ -98,7 +102,7 @@ export function ColumnChart({
                     return (
                       <path
                         key={s.name}
-                        d={barPath(x, barW, y(0), y(v))}
+                        d={barPath(left(x, barW), barW, y(0), y(v))}
                         style={{ fill: hollow ? "none" : color, stroke: hollow ? color : "none" }}
                         strokeWidth={hollow ? 1.5 : 0}
                         aria-hidden="true"
@@ -106,12 +110,12 @@ export function ColumnChart({
                     );
                   })}
                   {(n - 1 - i) % every === 0 && (
-                    <text x={gx + groupW / 2} y={height - 10} textAnchor="middle" fontSize={11} className="chart-label">
+                    <text x={left(gx + groupW / 2)} y={height - 10} textAnchor="middle" fontSize={11} className="chart-label">
                       {label}
                     </text>
                   )}
                   {/* the whole column is the hit target; it reads out every series */}
-                  <rect x={gx} y={PAD.top} width={groupW} height={plotH} fill="transparent" tabIndex={0} data-tip={tip(i)} aria-label={tip(i).replace(/\n/g, ", ")} className="hit" />
+                  <rect x={left(gx, groupW)} y={PAD.top} width={groupW} height={plotH} fill="transparent" tabIndex={0} data-tip={tip(i)} aria-label={tip(i).replace(/\n/g, ", ")} className="hit" />
                 </g>
               );
             })}
@@ -134,7 +138,7 @@ export function ColumnChart({
       {plot(680, "chart-wide")}
       {plot(340, "chart-narrow")}
       <details className="table-view">
-        <summary>הצגה כטבלה</summary>
+        <summary>{L("הצגה כטבלה", "Show as table")}</summary>
         <div className="table-wrap">
           <table>
             <thead>

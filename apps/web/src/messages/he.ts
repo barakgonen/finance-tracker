@@ -1,4 +1,4 @@
-// Hebrew UI strings (the default). English can be added as messages/en.ts with the same keys.
+// Hebrew UI strings (the default); messages/en.ts has the same keys.
 export const he = {
   app: { name: "הכספים שלנו" },
   nav: {
@@ -147,4 +147,5 @@ export const he = {
   errors: { generic: "משהו השתבש. נסו שוב.", readOnly: "חשבון צפייה בלבד לא יכול לבצע שינויים" },
 } as const;
 
-export type Messages = typeof he;
+type Strings<T> = { [K in keyof T]: T[K] extends string ? string : Strings<T[K]> };
+export type Messages = Strings<typeof he>;

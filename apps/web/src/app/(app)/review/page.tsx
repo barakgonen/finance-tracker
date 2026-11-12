@@ -7,6 +7,7 @@ import { categories, members, reviewItems } from "@/lib/queries";
 import { hebrewReason } from "@/lib/reason-text";
 import { nearMissesFor } from "@ft/ingest";
 import { confirmNearMissAction, correctAction } from "./actions";
+import { L, categoryName } from "@/lib/locale";
 
 export default async function ReviewPage() {
   const viewer = await requireViewer();
@@ -39,7 +40,7 @@ export default async function ReviewPage() {
               <h2 id={`t-${tx.id}`}>{tx.descriptionRaw}</h2>
               <span className="muted small">
                 {accountName} · <span className="num">{date(tx.purchaseDate)}</span>
-                {tx.categoryHint ? ` · ענף: ${tx.categoryHint}` : ""}
+                {tx.categoryHint ? ` · ${L("ענף", "Issuer category")}: ${tx.categoryHint}` : ""}
                 {tx.classificationReason ? ` · ${hebrewReason(tx.classificationReason)}` : ""}
               </span>
             </div>
@@ -53,14 +54,14 @@ export default async function ReviewPage() {
                 <input type="hidden" name="transactionId" value={tx.id} />
                 <input type="hidden" name="billId" value={near.billId} />
                 <span style={{ flex: "1 1 320px" }}>
-                  זה כנראה תשלום הדוח של {near.cardName} מ-<span className="num">{date(near.postingDate)}</span> (<span className="num">{money(near.totalMinor)}</span>).{" "}
+                  {L("זה כנראה תשלום הדוח של", "This is probably the payment of the bill of")} {near.cardName} {L("מ-", "from ")}<span className="num">{date(near.postingDate)}</span> (<span className="num">{money(near.totalMinor)}</span>).{" "}
                   {diff > 0n ? (
-                    <>ההפרש של <span className="num">{money(diff)}</span> יירשם כעמלה של הכרטיס.</>
+                    <>{L("ההפרש של", "The difference of")} <span className="num">{money(diff)}</span> {L("יירשם כעמלה של הכרטיס.", "will be recorded as a card fee.")}</>
                   ) : (
-                    <>ההפרש של <span className="num">{money(-diff)}</span> יירשם כזיכוי של הכרטיס.</>
+                    <>{L("ההפרש של", "The difference of")} <span className="num">{money(-diff)}</span> {L("יירשם כזיכוי של הכרטיס.", "will be recorded as a card credit.")}</>
                   )}
                 </span>
-                <button className="btn primary" type="submit">כן, זה תשלום הדוח</button>
+                <button className="btn primary" type="submit">{L("כן, זה תשלום הדוח", "Yes, this pays the bill")}</button>
               </form>
             );
           })()}
@@ -80,11 +81,11 @@ export default async function ReviewPage() {
                 <select className="field" id={`c-${tx.id}`} name="category" defaultValue={categorySlug ?? ""}>
                   <option value="">{t.review.none}</option>
                   <optgroup label={t.dashboard.expenses}>
-                    {expenseCats.map((c) => <option key={c.id} value={c.slug}>{c.nameHe}</option>)}
+                    {expenseCats.map((c) => <option key={c.id} value={c.slug}>{categoryName(c.nameHe)}</option>)}
                   </optgroup>
                   {tx.amount > 0n && (
                     <optgroup label={t.dashboard.income}>
-                      {incomeCats.map((c) => <option key={c.id} value={c.slug}>{c.nameHe}</option>)}
+                      {incomeCats.map((c) => <option key={c.id} value={c.slug}>{categoryName(c.nameHe)}</option>)}
                     </optgroup>
                   )}
                 </select>

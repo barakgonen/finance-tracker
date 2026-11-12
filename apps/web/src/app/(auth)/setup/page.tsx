@@ -1,13 +1,13 @@
 import { redirect } from "next/navigation";
 import { messages } from "@/lib/i18n";
 import { AuthForm } from "../AuthForm";
-import { hasUsers } from "@/lib/auth";
+import { authLocale, hasUsers } from "@/lib/auth";
 import { setupAction } from "../actions";
 
 export default async function SetupPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
   if (await hasUsers()) redirect("/login");
-  const t = messages();
+  const t = messages(await authLocale());
   return (
     <main className="auth">
       <div className="card">

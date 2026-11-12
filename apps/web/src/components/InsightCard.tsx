@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { InsightView } from "@/lib/insight-text";
+import { L } from "@/lib/locale";
 
 export interface InsightActions {
   action: (form: FormData) => Promise<void>;
@@ -32,10 +33,10 @@ export function InsightCard({ view, actions }: { view: InsightView; actions?: In
         <Link href={view.action.href} style={{ fontWeight: 500 }}>{view.action.label}</Link>
         {actions && (
           <span className="row" style={{ "--gap": "6px" } as React.CSSProperties}>
-            {actions.handled ? form("open", actions.handled === "done" ? "טופל · החזרה" : "לא רלוונטי · החזרה") : (
+            {actions.handled ? form("open", actions.handled === "done" ? L("טופל · החזרה", "Handled · undo") : L("לא רלוונטי · החזרה", "Not relevant · undo")) : (
               <>
-                {form("done", "טופל")}
-                {form("dismissed", "לא רלוונטי")}
+                {form("done", L("טופל", "Handled"))}
+                {form("dismissed", L("לא רלוונטי", "Not relevant"))}
               </>
             )}
           </span>

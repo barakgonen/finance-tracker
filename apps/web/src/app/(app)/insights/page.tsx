@@ -6,6 +6,7 @@ import { scope } from "@/lib/db";
 import { describeInsight } from "@/lib/insight-text";
 import { periodHref, resolvePeriod } from "@/lib/period";
 import { insightStateAction } from "./actions";
+import { L } from "@/lib/locale";
 
 export default async function InsightsPage({ searchParams }: { searchParams: Promise<{ month?: string; view?: string }> }) {
   const viewer = await requireViewer();
@@ -19,12 +20,12 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
   const actions = (id: string, status?: "done" | "dismissed") => (canEdit ? { action: insightStateAction, insightId: id, returnTo: here, handled: status } : undefined);
   return (
     <>
-      <ScopeBar path="/insights" period={period} title="תובנות" />
+      <ScopeBar path="/insights" period={period} title={L("תובנות", "Insights")} />
       <p className="muted small" style={{ margin: 0 }}>
-        כל תובנה מבוססת על התנועות שיובאו בלבד, ומסודרת לפי ההשפעה הכספית האפשרית. כשאין מספיק היסטוריה להשוואה, לא תוצג תובנה.
+        {L("כל תובנה מבוססת על התנועות שיובאו בלבד, ומסודרת לפי ההשפעה הכספית האפשרית. כשאין מספיק היסטוריה להשוואה, לא תוצג תובנה.", "Every insight is based only on imported transactions and is ordered by its possible financial impact. Without enough history to compare, no insight is shown.")}
       </p>
       {open.length === 0 ? (
-        <div className="card">{handled.length ? "כל התובנות של החודש טופלו." : "אין תובנות לחודש הזה."}</div>
+        <div className="card">{handled.length ? L("כל התובנות של החודש טופלו.", "All of this month's insights were handled.") : L("אין תובנות לחודש הזה.", "No insights for this month.")}</div>
       ) : (
         <div className="grid">
           {open.map((i) => <InsightCard key={i.id} view={describeInsight(i, period)} actions={actions(i.id)} />)}
@@ -32,7 +33,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
       )}
       {handled.length > 0 && (
         <details className="card">
-          <summary style={{ cursor: "pointer" }}>תובנות שטופלו או סומנו כלא רלוונטיות ({handled.length})</summary>
+          <summary style={{ cursor: "pointer" }}>{L("תובנות שטופלו או סומנו כלא רלוונטיות", "Insights handled or marked not relevant")} ({handled.length})</summary>
           <div className="grid" style={{ marginBlockStart: 12 }}>
             {handled.map(({ insight, status }) => <InsightCard key={insight.id} view={describeInsight(insight, period)} actions={actions(insight.id, status)} />)}
           </div>

@@ -6,6 +6,7 @@ import { logoutAction } from "../(auth)/actions";
 import { Nav } from "./Nav";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { MenuToggle } from "./MenuToggle";
+import { asLocale, L } from "@/lib/locale";
 import { ChartTooltip } from "@/components/ChartTooltip";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +42,7 @@ export default async function AppLayout({
             </svg>
           </span>
           {t.app.name}
-          <MenuToggle label="תפריט" pending={pending} />
+          <MenuToggle label={L("תפריט", "Menu")} pending={pending} />
         </div>
         <noscript>
           <style>{"#sidebar-body { display: flex !important; }"}</style>
@@ -50,24 +51,24 @@ export default async function AppLayout({
           <Nav
             items={[
               { href: "/", label: t.nav.dashboard },
-              { href: "/transactions", label: "תנועות" },
+              { href: "/transactions", label: L("תנועות", "Transactions") },
               { href: "/review", label: t.nav.review, badge: pending },
-              { href: "/expenses", label: "הוצאות" },
-              { href: "/income", label: "הכנסות" },
-              { href: "/cashflow", label: "תזרים" },
-              { href: "/recurring", label: "חיובים קבועים" },
-              { href: "/insights", label: "תובנות" },
-              { href: "/health", label: "בריאות פיננסית" },
-              { href: "/budgets", label: "תקציבים" },
-              { href: "/goals", label: "יעדים" },
-              { href: "/forecast", label: "תחזית" },
-              { href: "/assistant", label: "שאלו את הכספים" },
+              { href: "/expenses", label: L("הוצאות", "Expenses") },
+              { href: "/income", label: L("הכנסות", "Income") },
+              { href: "/cashflow", label: L("תזרים", "Cash flow") },
+              { href: "/recurring", label: L("חיובים קבועים", "Recurring") },
+              { href: "/insights", label: L("תובנות", "Insights") },
+              { href: "/health", label: L("בריאות פיננסית", "Financial health") },
+              { href: "/budgets", label: L("תקציבים", "Budgets") },
+              { href: "/goals", label: L("יעדים", "Goals") },
+              { href: "/forecast", label: L("תחזית", "Forecast") },
+              { href: "/assistant", label: L("שאלו את הכספים", "Ask your finances") },
               { href: "/import", label: t.nav.import, separatorBefore: true },
               { href: "/settings/accounts", label: t.nav.accounts },
             ]}
           />
           <div className="nav-sep" />
-          <ThemeSwitch current={viewer.theme} />
+          <ThemeSwitch current={viewer.theme} locale={asLocale(viewer.locale)} />
           <form action={logoutAction}>
             <button
               className="navlink"
