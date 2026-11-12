@@ -3,7 +3,7 @@
 // (spendingWhere / incomeWhere), so a drill-down list always adds up to the figure it came from.
 import { and, asc, desc, eq, gt, gte, ilike, inArray, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { INCOME_KINDS, SPENDING_KINDS, type TransactionKind } from "@ft/core";
-import { account, category, merchant, transaction, type Db } from "@ft/db";
+import { account, category, merchant, transaction, transactionSplit, type Db } from "@ft/db";
 import { monthRange, monthsBetween, shiftMonth } from "./months.js";
 
 export * from "./months.js";
@@ -54,6 +54,13 @@ const minor = (v: string | null | undefined) => BigInt(v ?? "0");
 /** Spending rows are negative; their sum negated is the amount spent (refunds reduce it). */
 const spentSum = sql<string>`coalesce(-sum(${transaction.amount}), 0)`;
 const amountSum = sql<string>`coalesce(sum(${transaction.amount}), 0)`;
+
+// A split transaction counts in each of its parts' categories. Category-based figures read
+// "lines": the transaction itself, or (joined with transaction_split) each of its parts. Totals
+// that don't depend on category keep reading whole transactions; the parts add up to them.
+export const lineCategoryId = sql`(case when ${transactionSplit.id} is null then ${transaction.categoryId} else ${transactionSplit.categoryId} end)`;
+export const lineAmount = sql<bigint>`(case when ${transactionSplit.id} is null then ${transaction.amount} else ${transactionSplit.amount} end)`;
+export const splitJoin = eq(transactionSplit.transactionId, transaction.id);
 const unreviewedSum = sql<string>`coalesce(sum(${transaction.amount}) filter (where ${transaction.needsReview}), 0)`;
 const monthOf = sql<string>`to_char(${transaction.purchaseDate}, 'YYYY-MM')`;
 
@@ -139,11 +146,12 @@ async function categoryTotals(db: Db, where: SQL, sign: 1n | -1n) {
       nameHe: category.nameHe,
       nameEn: category.nameEn,
       month: monthOf,
-      total: amountSum,
-      count: sql<number>`count(*)::int`,
+      total: sql<string>`coalesce(sum(${lineAmount}), 0)`,
+      count: sql<number>`count(distinct ${transaction.id})::int`,
     })
     .from(transaction)
-    .leftJoin(category, eq(category.id, transaction.categoryId))
+    .leftJoin(transactionSplit, splitJoin)
+    .leftJoin(category, eq(category.id, lineCategoryId))
     .where(where)
     .groupBy(category.slug, category.nameHe, category.nameEn, monthOf);
   return rows.map((r) => ({ ...r, slug: r.slug ?? UNCATEGORIZED, minor: minor(r.total) * sign }));
@@ -318,30 +326,39 @@ export interface TransactionQuery {
   offset?: number;
 }
 
-/** A page of transactions plus the count and sum of *all* matching rows. */
+/**
+ * A page of transactions plus the count and sum of *all* matching rows. Filtered by category, a
+ * split transaction appears with just its part in that category (`isSplitPart`), so the list adds
+ * up to the category's total.
+ */
 export async function listTransactions(db: Db, f: Filters, q: TransactionQuery) {
   const side = q.side ?? "all";
   if (q.billId) q = { ...q, from: "0001-01-01", to: "9999-12-31" };
+  const byLine = q.category !== undefined;
+  const categoryOf = byLine ? lineCategoryId : transaction.categoryId;
+  const amountOf = byLine ? lineAmount : transaction.amount;
   const where = and(
     side === "spending" ? spendingWhere(f, q.from, q.to) : side === "income" ? incomeWhere(f, q.from, q.to) : base(f, q.from, q.to),
     detailsVisible(f),
-    q.category === UNCATEGORIZED ? isNull(transaction.categoryId) : q.category ? eq(category.slug, q.category) : undefined,
+    q.category === UNCATEGORIZED ? sql`${categoryOf} is null` : q.category ? eq(category.slug, q.category) : undefined,
     q.merchantId ? eq(transaction.merchantId, q.merchantId) : undefined,
     q.accountId ? eq(transaction.accountId, q.accountId) : undefined,
     q.billId ? eq(transaction.cardBillId, q.billId) : undefined,
     q.search ? or(ilike(transaction.descriptionRaw, `%${q.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`)) : undefined,
   );
   const [summary] = await db
-    .select({ count: sql<number>`count(*)::int`, total: amountSum })
+    .select({ count: sql<number>`count(*)::int`, total: sql<string>`coalesce(sum(${amountOf}), 0)` })
     .from(transaction)
-    .leftJoin(category, eq(category.id, transaction.categoryId))
+    // without a category filter the split join matches nothing, so every transaction is one row
+    .leftJoin(transactionSplit, byLine ? splitJoin : sql`false`)
+    .leftJoin(category, eq(category.id, categoryOf))
     .where(where);
   const rows = await db
     .select({
       id: transaction.id,
       purchaseDate: transaction.purchaseDate,
       description: transaction.descriptionRaw,
-      amount: transaction.amount,
+      amount: sql<bigint>`${amountOf}`.mapWith(BigInt),
       originalAmount: transaction.originalAmount,
       originalCurrency: transaction.originalCurrency,
       kind: transaction.kind,
@@ -353,9 +370,11 @@ export async function listTransactions(db: Db, f: Filters, q: TransactionQuery) 
       accountName: account.name,
       merchantId: transaction.merchantId,
       cardBillId: transaction.cardBillId,
+      isSplitPart: byLine ? sql<boolean>`${transactionSplit.id} is not null` : sql<boolean>`false`,
     })
     .from(transaction)
-    .leftJoin(category, eq(category.id, transaction.categoryId))
+    .leftJoin(transactionSplit, byLine ? splitJoin : sql`false`)
+    .leftJoin(category, eq(category.id, categoryOf))
     .innerJoin(account, eq(account.id, transaction.accountId))
     .where(where)
     .orderBy(desc(transaction.purchaseDate), asc(transaction.id))

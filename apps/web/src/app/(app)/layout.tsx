@@ -65,6 +65,7 @@ export default async function AppLayout({
               { href: "/assistant", label: L("שאלו את הכספים", "Ask your finances") },
               { href: "/import", label: t.nav.import, separatorBefore: true },
               { href: "/settings/accounts", label: t.nav.accounts },
+              { href: "/settings/categories", label: L("קטגוריות", "Categories") },
             ]}
           />
           <div className="nav-sep" />

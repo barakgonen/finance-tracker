@@ -10,7 +10,7 @@ export const LOCALE_COOKIE = "ft_locale";
 
 export const asLocale = (v: unknown): Locale => (v === "en" ? "en" : "he");
 
-const current = cache(() => ({ locale: "he" as Locale }));
+const current = cache(() => ({ locale: "he" as Locale, customEn: new Map<string, string>() }));
 
 export function setRequestLocale(locale: string): void {
   current().locale = asLocale(locale);
@@ -29,7 +29,16 @@ export const isRtl = (locale: Locale = requestLocale()) => locale === "he";
 
 const CATEGORY_EN = new Map([...SYSTEM_CATEGORIES.map((c) => [c.he, c.en] as const), ["ללא קטגוריה", "Uncategorized"] as const]);
 
-/** A category's name in the request's language (categories are stored with their Hebrew name). */
+/**
+ * A category's name in the request's language, from its stored (Hebrew) name: built-in ones by
+ * the core list, the household's own by the English names registered with registerCategoryNames.
+ */
 export function categoryName(hebrewName: string): string {
-  return current().locale === "en" ? (CATEGORY_EN.get(hebrewName) ?? hebrewName) : hebrewName;
+  if (current().locale !== "en") return hebrewName;
+  return CATEGORY_EN.get(hebrewName) ?? current().customEn.get(hebrewName) ?? hebrewName;
+}
+
+/** The household's own categories' English names, for categoryName() in this request. */
+export function registerCategoryNames(cats: { nameHe: string; nameEn: string }[]): void {
+  for (const c of cats) current().customEn.set(c.nameHe, c.nameEn);
 }

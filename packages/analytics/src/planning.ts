@@ -1,8 +1,8 @@
 // Budgets, goals and forecasts over the household's data (logic in @ft/core planning).
 import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import { budgetStatus, forecast, goalProgress, suggestBudget, type Adjustment, type BudgetStatus, type Forecast, type GoalProgress } from "@ft/core";
-import { account, balanceSnapshot, budget, category, goal, transaction, type Db } from "@ft/db";
-import { categoryBreakdown, monthlySeries, spendingWhere, type Filters } from "./index.js";
+import { account, balanceSnapshot, budget, category, goal, transaction, transactionSplit, type Db } from "@ft/db";
+import { categoryBreakdown, lineAmount, lineCategoryId, monthlySeries, spendingWhere, splitJoin, type Filters } from "./index.js";
 import { recurringSeries } from "./intelligence.js";
 import { monthRange, shiftMonth } from "./months.js";
 
@@ -18,9 +18,10 @@ function dayOfMonth(month: string): { day: number; days: number } {
 async function categorySpend(db: Db, f: Filters, categoryId: string, month: string): Promise<bigint> {
   const { from, to } = monthRange(month);
   const [r] = await db
-    .select({ total: sql<string>`coalesce(-sum(${transaction.amount}), 0)` })
+    .select({ total: sql<string>`coalesce(-sum(${lineAmount}), 0)` })
     .from(transaction)
-    .where(and(spendingWhere(f, from, to), eq(transaction.categoryId, categoryId)));
+    .leftJoin(transactionSplit, splitJoin)
+    .where(and(spendingWhere(f, from, to), sql`${lineCategoryId} = ${categoryId}`));
   return BigInt(r?.total ?? "0");
 }
 

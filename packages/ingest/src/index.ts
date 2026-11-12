@@ -8,3 +8,4 @@ export * from "./invitations.js";
 export { resolveMerchant, renameMerchant, setMerchantCategory, mergeMerchants } from "./merchants.js";
 export * from "./planning.js";
 export * from "./reprocess.js";
+export * from "./categories.js";

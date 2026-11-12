@@ -2,11 +2,11 @@ import "server-only";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { and, eq, gt, sql } from "drizzle-orm";
-import { appUser, householdMember, session } from "@ft/db";
+import { appUser, category, householdMember, session } from "@ft/db";
 import { db, scope } from "./db";
 import { env } from "./env";
 import { AttemptLimiter, hashToken, newSessionToken } from "./auth-core";
-import { asLocale, LOCALE_COOKIE, setRequestLocale, type Locale } from "./locale";
+import { asLocale, LOCALE_COOKIE, registerCategoryNames, setRequestLocale, type Locale } from "./locale";
 
 const COOKIE = "ft_session";
 const SESSION_DAYS = 7;
@@ -83,6 +83,14 @@ export async function requireViewer(): Promise<Viewer> {
   );
   if (!member) redirect("/login");
   setRequestLocale(s.user.locale);
+  if (s.user.locale === "en") {
+    // the household's own categories, so their English names show (see categoryName)
+    registerCategoryNames(
+      await scope({ householdId: member.householdId }, (tx) =>
+        tx.select({ nameHe: category.nameHe, nameEn: category.nameEn }).from(category).where(and(eq(category.householdId, member.householdId), eq(category.isSystem, false))),
+      ),
+    );
+  }
   return {
     userId: s.user.id,
     displayName: s.user.displayName,

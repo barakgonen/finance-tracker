@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { billsForDebits, billSummary, listTransactions, monthRange, UNCATEGORIZED } from "@ft/analytics";
+import { INCOME_KINDS, SPENDING_KINDS } from "@ft/core";
+import { splitsOf } from "@ft/ingest";
 import { householdScope, requireViewer } from "@/lib/auth";
 import { scope } from "@/lib/db";
 import { date, money, monthName } from "@/lib/format";
@@ -41,9 +43,11 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
       offset: (page - 1) * PAGE,
     });
     const paid = await billsForDebits(tx, period.filters, result.rows.filter((r) => r.kind === "card_settlement").map((r) => r.id));
-    return { period, cats, category, result, bill, paid, accts: await accounts(tx, viewer.householdId) };
+    const splits = await splitsOf(tx, viewer.householdId, result.rows.filter((r) => !r.isSplitPart).map((r) => r.id));
+    return { period, cats, category, result, bill, paid, splits, accts: await accounts(tx, viewer.householdId) };
   });
-  const { period, cats, category, result, bill, paid, accts } = data;
+  const { period, cats, category, result, bill, paid, splits, accts } = data;
+  const canEdit = viewer.role !== "viewer";
   const pages = Math.max(1, Math.ceil(result.count / PAGE));
   const keep = { side, category, merchant: uuid(params.merchant), account: uuid(params.account), bill: bill?.billId, q: params.q };
   const total = side === "spending" ? -result.totalMinor : result.totalMinor;
@@ -132,7 +136,30 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                       </div>
                     ))}
                   </td>
-                  <td className="small">{r.categoryNameHe ? categoryName(r.categoryNameHe) : t.kinds[r.kind]}</td>
+                  <td className="small">
+                    {splits.has(r.id) ? (
+                      <>
+                        {L("מפוצל", "Split")}
+                        {splits.get(r.id)!.map((p, i) => (
+                          <div key={i} className="muted">
+                            {p.categoryName ? categoryName(p.categoryName) : L("ללא קטגוריה", "Uncategorized")} · <span className="num">{money(p.amountMinor < 0n ? -p.amountMinor : p.amountMinor)}</span>
+                          </div>
+                        ))}
+                      </>
+                    ) : r.categoryNameHe ? (
+                      categoryName(r.categoryNameHe)
+                    ) : (
+                      t.kinds[r.kind]
+                    )}
+                    {r.isSplitPart ? <div className="muted">{L("חלק מתנועה מפוצלת", "Part of a split transaction")}</div> : null}
+                    {canEdit && (SPENDING_KINDS.has(r.kind) || INCOME_KINDS.has(r.kind)) ? (
+                      <div>
+                        <Link className="muted" href={`/transactions/${r.id}/split?back=${encodeURIComponent(periodHref("/transactions", period, { ...keep, page: String(page) }))}`}>
+                          {splits.has(r.id) || r.isSplitPart ? L("עריכת הפיצול", "Edit split") : L("פיצול", "Split")}
+                        </Link>
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="small muted">{r.accountName}</td>
                   <td className="num" style={{ textAlign: "end" }}>
                     {money(r.amount, { signed: true })}
