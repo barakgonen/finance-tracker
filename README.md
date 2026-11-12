@@ -1,6 +1,6 @@
 # Finance Tracker
 
-A private, self-hosted household finance app (Hebrew, RTL): imports Israeli bank and credit-card
+A private, self-hosted household finance app (Hebrew and English): imports Israeli bank and credit-card
 statements (Leumi, Isracard, Cal, Max), categorizes transactions, and shows where the money goes.
 
 ## Run it
@@ -17,8 +17,21 @@ applies migrations and opens http://localhost:3000. Later runs reuse the same se
 - `./start.sh stop`: stop the database (stop the app with Ctrl+C)
 - `./start.sh reset`: delete all data (database and stored statements); asks first
 
-Back up `.env` (especially `FILE_ENCRYPTION_KEY`): without it, stored statements and two-factor
-enrollments can't be read. The app listens on this computer only; set `HOST=0.0.0.0` in `.env` to
+### Backups
+
+- `./start.sh backup`: save an encrypted backup (database + stored statements) to `backups/`;
+  the newest 14 are kept. One is also taken automatically before the database is updated, when
+  the last one is over a day old.
+- `./start.sh schedule-backups`: back up every night at 03:00 (macOS launchd; prints a cron
+  line on Linux).
+- `./start.sh restore backups/finance-….tar.enc`: replace all data with a backup (stop the app
+  first; asks first, and backs up the current data before replacing it).
+
+Backups are encrypted with `BACKUP_PASSPHRASE`, and restored statements need
+`FILE_ENCRYPTION_KEY`; both live in `.env`. Keep a copy of `.env` somewhere safe (a password
+manager), separate from the backups: without it a backup can't be used. Copy `backups/` to
+another disk or cloud folder from time to time; a backup on the same disk doesn't survive that
+disk. The app listens on this computer only; set `HOST=0.0.0.0` in `.env` to
 reach it from your network, and put it behind HTTPS (then also set `COOKIE_SECURE=true`).
 
 ## The assistant

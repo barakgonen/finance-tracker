@@ -3,6 +3,9 @@
 #   ./start.sh          set up (first run) and start: database, migrations, build, web app
 #   ./start.sh stop     stop the database (the web app stops with Ctrl+C)
 #   ./start.sh reset    delete ALL data: database and stored statements (asks first)
+#   ./start.sh backup   save an encrypted backup of the database and statements to backups/
+#   ./start.sh restore <file>   replace all data with a backup (asks first)
+#   ./start.sh schedule-backups   back up every night at 03:00 (macOS; prints a cron line elsewhere)
 # NO_OPEN=1 skips opening the browser.
 set -euo pipefail
 
@@ -20,6 +23,107 @@ secret() { openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | cut -c1-32; }
 need docker "https://docs.docker.com/get-docker/"
 docker info >/dev/null 2>&1 || die "Docker is installed but not running. Start Docker Desktop and try again."
 
+load_env() {
+  [ -f .env ] || die "No .env yet: run ./start.sh first."
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+}
+
+# Backups: one file holding a database dump and the stored statements (already encrypted on
+# disk), encrypted with BACKUP_PASSPHRASE from .env. Restoring also needs FILE_ENCRYPTION_KEY,
+# so keep a copy of .env somewhere safe (a password manager), apart from the backups.
+BACKUP_KEEP=14
+# temporary directories (they can hold a decrypted dump) are removed however the script ends
+TMP_DIRS=""
+trap 'for d in $TMP_DIRS; do rm -rf "$d"; done' EXIT
+# sets WORK (not via $(...), whose subshell would lose the TMP_DIRS update)
+new_tmpdir() { WORK=$(mktemp -d); TMP_DIRS="$TMP_DIRS $WORK"; }
+ensure_backup_passphrase() {
+  if [ -z "${BACKUP_PASSPHRASE:-}" ]; then
+    BACKUP_PASSPHRASE=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | cut -c1-40)
+    printf '# encrypts backups (./start.sh backup); without it a backup cannot be restored\nBACKUP_PASSPHRASE=%s\n' "$BACKUP_PASSPHRASE" >> .env
+    export BACKUP_PASSPHRASE
+  fi
+}
+has_data() {
+  [ "$(docker compose exec -T postgres psql -U finance -d finance -tAc "select to_regclass('public.transaction') is not null" 2>/dev/null)" = "t" ]
+}
+backup() {
+  ensure_backup_passphrase
+  local dir="${BACKUP_DIR:-$ROOT/backups}" stamp work file
+  stamp=$(date +%Y%m%d-%H%M%S)
+  mkdir -p "$dir"
+  new_tmpdir
+  work=$WORK
+  docker compose exec -T postgres pg_dump -U finance -d finance -Fc > "$work/database.dump" || die "The database dump failed"
+  [ -d "${BLOB_DIR:-}" ] && cp -R "$BLOB_DIR" "$work/blobs"
+  printf 'created=%s\nformat=1\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$work/manifest"
+  file="$dir/finance-$stamp.tar.enc"
+  (umask 077 && tar -C "$work" -cf - . | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:BACKUP_PASSPHRASE -out "$file") || die "Writing the backup failed"
+  # keep the newest $BACKUP_KEEP
+  ls -1t "$dir"/finance-*.tar.enc 2>/dev/null | tail -n +$((BACKUP_KEEP + 1)) | while read -r old; do rm -f "$old"; done
+  say "Backup saved: $file"
+}
+latest_backup_age_hours() {
+  local newest
+  newest=$(ls -1t "${BACKUP_DIR:-$ROOT/backups}"/finance-*.tar.enc 2>/dev/null | head -1)
+  [ -n "$newest" ] || { echo 999999; return; }
+  echo $(( ($(date +%s) - $(stat -f %m "$newest" 2>/dev/null || stat -c %Y "$newest")) / 3600 ))
+}
+restore() {
+  local file="${1:-}"
+  [ -n "$file" ] && [ -f "$file" ] || die "Usage: ./start.sh restore backups/finance-YYYYMMDD-HHMMSS.tar.enc"
+  [ -n "${BACKUP_PASSPHRASE:-}" ] || die "BACKUP_PASSPHRASE is missing from .env, so the backup can't be decrypted"
+  port_free "${PORT:-3000}" || die "The app is running. Stop it (Ctrl+C) before restoring."
+  printf 'This replaces ALL current data with the backup %s. Type "restore" to continue: ' "$(basename "$file")"
+  read -r answer
+  [ "$answer" = "restore" ] || die "Cancelled"
+  local work
+  new_tmpdir
+  work=$WORK
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass env:BACKUP_PASSPHRASE -in "$file" | tar -C "$work" -xf - || die "Couldn't decrypt the backup (wrong BACKUP_PASSPHRASE?)"
+  [ -f "$work/database.dump" ] || die "This file isn't a backup made by ./start.sh backup"
+  docker compose up -d --wait --quiet-pull postgres || die "The database didn't start"
+  # a safety copy of what is about to be replaced
+  if has_data; then say "Saving the current data first"; backup; fi
+  # the app role is cluster-wide; on a fresh database it doesn't exist yet
+  docker compose exec -T postgres psql -U finance -d finance -qc "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'finance_app') THEN CREATE ROLE finance_app NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS; END IF; END \$\$;" >/dev/null
+  docker compose exec -T postgres psql -U finance -d finance -qc "SET client_min_messages = warning; DROP SCHEMA public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public;" >/dev/null
+  docker compose exec -T postgres pg_restore -U finance -d finance --no-owner --exit-on-error < "$work/database.dump" || die "Restoring the database failed"
+  if [ -d "$work/blobs" ]; then
+    [ -d "$BLOB_DIR" ] && mv "$BLOB_DIR" "$BLOB_DIR.before-restore-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$(dirname "$BLOB_DIR")" && cp -R "$work/blobs" "$BLOB_DIR"
+  fi
+  say "Restored. Run ./start.sh to start the app."
+}
+schedule_backups() {
+  if [ "$(uname)" = "Darwin" ]; then
+    local label="local.finance-tracker.backup" plist="$HOME/Library/LaunchAgents/local.finance-tracker.backup.plist"
+    mkdir -p "$HOME/Library/LaunchAgents" "$ROOT/backups"
+    cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>$label</string>
+  <key>ProgramArguments</key><array><string>$ROOT/start.sh</string><string>backup</string></array>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer><key>Minute</key><integer>0</integer></dict>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string></dict>
+  <key>StandardOutPath</key><string>$ROOT/backups/backup.log</string>
+  <key>StandardErrorPath</key><string>$ROOT/backups/backup.log</string>
+</dict></plist>
+PLIST
+    launchctl unload "$plist" 2>/dev/null || true
+    launchctl load "$plist"
+    say "Nightly backups scheduled at 03:00 (log: backups/backup.log). If the Mac is asleep then, it runs on wake."
+    say "To stop them: launchctl unload $plist && rm $plist"
+  else
+    say "Add this line with 'crontab -e' for a nightly backup at 03:00:"
+    echo "0 3 * * * cd $ROOT && ./start.sh backup >> $ROOT/backups/backup.log 2>&1"
+  fi
+}
+
 case "${1:-start}" in
   stop)
     say "Stopping the database"
@@ -35,8 +139,24 @@ case "${1:-start}" in
     say "All data deleted. Your settings in .env were kept; run ./start.sh to start fresh."
     exit 0
     ;;
+  backup)
+    load_env
+    docker compose up -d --wait --quiet-pull postgres || die "The database didn't start"
+    backup
+    exit 0
+    ;;
+  restore)
+    load_env
+    restore "${2:-}"
+    exit 0
+    ;;
+  schedule-backups)
+    load_env
+    schedule_backups
+    exit 0
+    ;;
   start) ;;
-  *) die "Unknown command: $1 (use start, stop or reset)" ;;
+  *) die "Unknown command: $1 (use start, stop, reset, backup, restore or schedule-backups)" ;;
 esac
 
 need node "https://nodejs.org (version 22 or newer)"
@@ -95,7 +215,11 @@ pnpm install --frozen-lockfile --reporter=silent
 say "Building (a minute the first time, fast afterwards)"
 pnpm build >/tmp/finance-tracker-build.log 2>&1 || { tail -30 /tmp/finance-tracker-build.log; die "Build failed (full log: /tmp/finance-tracker-build.log)"; }
 
-# 4. schema and the restricted app role
+# 4. schema and the restricted app role, after a backup when the last one is over a day old
+if has_data && [ "$(latest_backup_age_hours)" -ge 24 ]; then
+  say "Backing up before updating the database"
+  backup
+fi
 say "Updating the database schema"
 pnpm --silent --filter @ft/db migrate
 

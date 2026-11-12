@@ -8,3 +8,4 @@ fixtures/
 .next/
 next-env.d.ts
 *.tsbuildinfo
+backups/
