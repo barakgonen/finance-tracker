@@ -1,8 +1,8 @@
 // Gathers the inputs for the health score (see computeHealth in @ft/core) over a 6-month window.
 import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { computeHealth, type HealthResult } from "@ft/core";
-import { account, transaction, type Db } from "@ft/db";
-import { monthlySeries, type Filters } from "./index.js";
+import { account, transaction, transactionSplit, type Db } from "@ft/db";
+import { lineAmount, lineMemberId, linesOn, monthlySeries, type Filters } from "./index.js";
 import { recurringSeries } from "./intelligence.js";
 import { averageGoalProgress, liquidBalance } from "./planning.js";
 import { monthRange, shiftMonth } from "./months.js";
@@ -20,13 +20,14 @@ export async function healthScore(db: Db, f: Filters, month: string): Promise<He
     eq(transaction.status, "posted"),
     gte(transaction.purchaseDate, from),
     lt(transaction.purchaseDate, to),
-    f.memberId ? eq(transaction.memberId, f.memberId) : undefined,
+    f.memberId ? sql`${lineMemberId} = ${f.memberId}` : undefined,
   );
 
   const series = await monthlySeries(db, f, first, month);
   const loans = await db
-    .select({ month: monthOf, total: sql<string>`coalesce(-sum(${transaction.amount}), 0)` })
+    .select({ month: monthOf, total: sql<string>`coalesce(-sum(${lineAmount}), 0)` })
     .from(transaction)
+    .leftJoin(transactionSplit, linesOn(f))
     .where(and(scope, eq(transaction.kind, "loan_payment")))
     .groupBy(monthOf);
   const loanBy = new Map(loans.map((l) => [l.month, BigInt(l.total)]));

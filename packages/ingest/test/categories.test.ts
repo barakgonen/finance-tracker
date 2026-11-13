@@ -88,11 +88,14 @@ describe("custom categories", () => {
 describe("splits", () => {
   it("must add up, fit the transaction's side, and have at least two parts", async () => {
     const t = await tx(-50000n);
-    const split = (parts: { amountMinor: bigint; category: string | null }[]) => setSplits(deps.db, { householdId: hid, transactionId: t.id, parts });
+    const split = (parts: { amountMinor: bigint; category: string | null; member?: string | null }[]) => setSplits(deps.db, { householdId: hid, transactionId: t.id, parts });
     await expect(split([{ amountMinor: 30000n, category: "groceries" }, { amountMinor: 10000n, category: "home" }])).rejects.toThrow(/add up/);
     await expect(split([{ amountMinor: 50000n, category: "groceries" }])).rejects.toThrow(/two parts/);
     await expect(split([{ amountMinor: 40000n, category: "groceries" }, { amountMinor: 10000n, category: "salary" }])).rejects.toThrow(/fit/);
     await expect(split([{ amountMinor: 50001n, category: "groceries" }, { amountMinor: -1n, category: "home" }])).rejects.toThrow(/positive/);
+
+    // a part can't go to someone outside the household
+    await expect(split([{ amountMinor: 40000n, category: "groceries" }, { amountMinor: 10000n, category: "home", member: "00000000-0000-0000-0000-000000000000" } as never])).rejects.toThrow(/Member not found/);
 
     await split([{ amountMinor: 10000n, category: "home" }, { amountMinor: 40000n, category: null }]);
     const parts = await deps.db.select().from(transactionSplit).where(eq(transactionSplit.transactionId, t.id));

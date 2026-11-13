@@ -143,6 +143,9 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
                         {splits.get(r.id)!.map((p, i) => (
                           <div key={i} className="muted">
                             {p.categoryName ? categoryName(p.categoryName) : L("ללא קטגוריה", "Uncategorized")} · <span className="num">{money(p.amountMinor < 0n ? -p.amountMinor : p.amountMinor)}</span>
+                            {new Set(splits.get(r.id)!.map((x) => x.memberId)).size > 1 ? (
+                              <> · {p.memberId ? (period.people.find((m) => m.id === p.memberId)?.displayName ?? "") : L("משותף", "Shared")}</>
+                            ) : null}
                           </div>
                         ))}
                       </>

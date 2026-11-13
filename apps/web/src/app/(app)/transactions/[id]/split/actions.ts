@@ -17,10 +17,19 @@ const backOf = (form: FormData) => {
   // only paths inside the app (no //host or \\host)
   return /^\/(?![/\\])/.test(back) ? back : "/transactions";
 };
+/** What was typed, row by row, so a failed save comes back with the form as it was. */
+const draftOf = (form: FormData) =>
+  Array.from({ length: MAX_PARTS }, (_, i) => ({
+    a: String(form.get(`amount-${i}`) ?? "").slice(0, 20),
+    c: String(form.get(`category-${i}`) ?? "").slice(0, 40),
+    m: String(form.get(`member-${i}`) ?? "").slice(0, 40),
+  }));
+
 const errorPage = (form: FormData, error: string): never => {
   const id = String(form.get("transactionId"));
   if (!/^[0-9a-f-]{36}$/.test(id)) redirect("/transactions");
-  return redirect(`/transactions/${id}/split?error=${encodeURIComponent(error)}&back=${encodeURIComponent(backOf(form))}`);
+  const draft = Buffer.from(JSON.stringify(draftOf(form))).toString("base64url");
+  return redirect(`/transactions/${id}/split?error=${encodeURIComponent(error)}&back=${encodeURIComponent(backOf(form))}&draft=${draft}`);
 };
 
 async function fail(form: FormData, error: string): Promise<never> {
@@ -53,7 +62,9 @@ export async function splitAction(form: FormData): Promise<void> {
     if (!raw) continue;
     const amountMinor = parseShekels(raw);
     if (amountMinor === null || amountMinor === 0n) return fail(form, "Every part needs a positive amount");
-    parts.push({ amountMinor, category: String(form.get(`category-${i}`) ?? "") || null });
+    // "shared" or a member id (the service checks it belongs to the household)
+    const member = String(form.get(`member-${i}`) ?? "");
+    parts.push({ amountMinor, category: String(form.get(`category-${i}`) ?? "") || null, member: member === "shared" ? null : member || undefined });
   }
   // fewer than two parts is a mistake, not a request to remove the split (that has its own button)
   if (parts.length < 2) return fail(form, "A split needs at least two parts");

@@ -2,8 +2,8 @@
 // spending/income definitions in ./index.
 import { and, eq, inArray, lt, gte, sql } from "drizzle-orm";
 import { detectInsights, detectRecurring, INCOME_KINDS, SPENDING_KINDS, type Insight, type RecurringSeries, type TransactionKind } from "@ft/core";
-import { category, insightState, merchant, transaction, type Db } from "@ft/db";
-import { categoryBreakdown, detailsVisible, monthlySeries, spendingWhere, type Filters } from "./index.js";
+import { category, insightState, merchant, transaction, transactionSplit, type Db } from "@ft/db";
+import { categoryBreakdown, detailsVisible, lineAmount, lineCategoryId, lineMemberId, linesOn, monthlySeries, spendingWhere, type Filters } from "./index.js";
 import { monthRange, monthsBetween, shiftMonth } from "./months.js";
 
 export type RecurringWithCategory = RecurringSeries & { categorySlug: string | null; categoryName: string | null; merchantId: string | null };
@@ -18,7 +18,7 @@ export async function recurringSeries(db: Db, f: Filters, month: string): Promis
     .select({
       id: transaction.id,
       date: sql<string>`${transaction.purchaseDate}::text`,
-      amount: transaction.amount,
+      amount: sql<bigint>`${lineAmount}`.mapWith(BigInt),
       merchantId: transaction.merchantId,
       merchantName: merchant.name,
       descriptionNorm: transaction.descriptionNorm,
@@ -30,6 +30,7 @@ export async function recurringSeries(db: Db, f: Filters, month: string): Promis
       categoryName: category.nameHe,
     })
     .from(transaction)
+    .leftJoin(transactionSplit, linesOn(f))
     .leftJoin(merchant, eq(merchant.id, transaction.merchantId))
     .leftJoin(category, eq(category.id, transaction.categoryId))
     .where(
@@ -40,7 +41,7 @@ export async function recurringSeries(db: Db, f: Filters, month: string): Promis
         gte(transaction.purchaseDate, from),
         lt(transaction.purchaseDate, to),
         inArray(transaction.kind, KINDS),
-        f.memberId ? eq(transaction.memberId, f.memberId) : undefined,
+        f.memberId ? sql`${lineMemberId} = ${f.memberId}` : undefined,
         detailsVisible(f),
       ),
     );
@@ -114,11 +115,12 @@ export async function monthInsights(db: Db, f: Filters, month: string): Promise<
       date: sql<string>`${transaction.purchaseDate}::text`,
       label: sql<string>`coalesce(${merchant.name}, ${transaction.descriptionRaw})`,
       merchantKey: transaction.merchantId,
-      amountMinor: transaction.amount,
+      amountMinor: sql<bigint>`${lineAmount}`.mapWith(BigInt),
       categorySlug: category.slug,
       installmentNo: transaction.installmentNo,
     })
     .from(transaction)
+    .leftJoin(transactionSplit, linesOn(f))
     .leftJoin(merchant, eq(merchant.id, transaction.merchantId))
     .leftJoin(category, eq(category.id, transaction.categoryId))
     .where(and(spendingWhere(f, from, to), detailsVisible(f)));
@@ -127,10 +129,11 @@ export async function monthInsights(db: Db, f: Filters, month: string): Promise<
   const norms = await db
     .select({
       slug: category.slug,
-      median: sql<string>`percentile_disc(0.5) within group (order by -${transaction.amount})`,
+      median: sql<string>`percentile_disc(0.5) within group (order by -${lineAmount})`,
       count: sql<number>`count(*)::int`,
     })
     .from(transaction)
+    .leftJoin(transactionSplit, linesOn(f))
     .innerJoin(category, eq(category.id, transaction.categoryId))
     .where(and(spendingWhere(f, monthRange(shiftMonth(month, -6)).from, from), lt(transaction.amount, 0n)))
     .groupBy(category.slug);
@@ -174,21 +177,24 @@ export async function merchantDetail(db: Db, f: Filters, merchantId: string, mon
   const where = and(spendingWhere(f, monthRange(first).from, monthRange(month).to), eq(transaction.merchantId, merchantId), detailsVisible(f));
   const monthOf = sql<string>`to_char(${transaction.purchaseDate}, 'YYYY-MM')`;
   const perMonth = await db
-    .select({ month: monthOf, total: sql<string>`coalesce(-sum(${transaction.amount}), 0)`, count: sql<number>`count(*)::int` })
+    .select({ month: monthOf, total: sql<string>`coalesce(-sum(${lineAmount}), 0)`, count: sql<number>`count(distinct ${transaction.id})::int` })
     .from(transaction)
+    .leftJoin(transactionSplit, linesOn(f))
     .where(where)
     .groupBy(monthOf);
   const amounts = await db
-    .select({ amount: sql<string>`-${transaction.amount}`, count: sql<number>`count(*)::int` })
+    .select({ amount: sql<string>`-${lineAmount}`, count: sql<number>`count(*)::int` })
     .from(transaction)
+    .leftJoin(transactionSplit, linesOn(f))
     .where(where)
-    .groupBy(transaction.amount)
-    .orderBy(sql`count(*) desc`, sql`-${transaction.amount} desc`)
+    .groupBy(lineAmount)
+    .orderBy(sql`count(*) desc`, sql`-${lineAmount} desc`)
     .limit(3);
   const cats = await db
     .select({ slug: category.slug, name: category.nameHe, count: sql<number>`count(*)::int` })
     .from(transaction)
-    .leftJoin(category, eq(category.id, transaction.categoryId))
+    .leftJoin(transactionSplit, linesOn(f, true))
+    .leftJoin(category, eq(category.id, lineCategoryId))
     .where(where)
     .groupBy(category.slug, category.nameHe)
     .orderBy(sql`count(*) desc`);

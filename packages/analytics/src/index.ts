@@ -31,7 +31,21 @@ export function detailsVisible(f: Filters): SQL | undefined {
 const SPENDING = [...SPENDING_KINDS] as TransactionKind[];
 const INCOME = [...INCOME_KINDS] as TransactionKind[];
 
-/** Rows that count at all: this household, posted, not replaced by a later version. */
+// A split transaction's parts can each have a category and an owner. Figures read "lines": the
+// transaction itself, or (joined with transaction_split) each of its parts, which add up to it.
+// Every query joins the parts with linesOn(): they are matched only when the figure depends on
+// them (a member's view, or a breakdown by category); otherwise the join matches nothing and
+// each transaction is one line, as if it weren't split.
+export const lineCategoryId = sql`(case when ${transactionSplit.id} is null then ${transaction.categoryId} else ${transactionSplit.categoryId} end)`;
+export const lineAmount = sql<bigint>`(case when ${transactionSplit.id} is null then ${transaction.amount} else ${transactionSplit.amount} end)`;
+export const lineMemberId = sql`(case when ${transactionSplit.id} is null then ${transaction.memberId} else ${transactionSplit.memberId} end)`;
+export const splitJoin = eq(transactionSplit.transactionId, transaction.id);
+export const linesOn = (f: Filters, byCategory = false) => (f.memberId || byCategory ? splitJoin : sql`false`);
+
+/**
+ * Rows that count at all: this household, posted, not replaced by a later version; in a member's
+ * view, that member's lines. Queries using it join transaction_split with linesOn(f).
+ */
 function base(f: Filters, from: string, to: string): SQL {
   return and(
     eq(transaction.householdId, f.householdId),
@@ -39,7 +53,7 @@ function base(f: Filters, from: string, to: string): SQL {
     eq(transaction.status, "posted"),
     gte(transaction.purchaseDate, from),
     lt(transaction.purchaseDate, to),
-    f.memberId ? eq(transaction.memberId, f.memberId) : undefined,
+    f.memberId ? sql`${lineMemberId} = ${f.memberId}` : undefined,
   )!;
 }
 
@@ -52,16 +66,11 @@ export const incomeWhere = (f: Filters, from: string, to: string) => and(base(f,
 
 const minor = (v: string | null | undefined) => BigInt(v ?? "0");
 /** Spending rows are negative; their sum negated is the amount spent (refunds reduce it). */
-const spentSum = sql<string>`coalesce(-sum(${transaction.amount}), 0)`;
-const amountSum = sql<string>`coalesce(sum(${transaction.amount}), 0)`;
-
-// A split transaction counts in each of its parts' categories. Category-based figures read
-// "lines": the transaction itself, or (joined with transaction_split) each of its parts. Totals
-// that don't depend on category keep reading whole transactions; the parts add up to them.
-export const lineCategoryId = sql`(case when ${transactionSplit.id} is null then ${transaction.categoryId} else ${transactionSplit.categoryId} end)`;
-export const lineAmount = sql<bigint>`(case when ${transactionSplit.id} is null then ${transaction.amount} else ${transactionSplit.amount} end)`;
-export const splitJoin = eq(transactionSplit.transactionId, transaction.id);
-const unreviewedSum = sql<string>`coalesce(sum(${transaction.amount}) filter (where ${transaction.needsReview}), 0)`;
+const spentSum = sql<string>`coalesce(-sum(${lineAmount}), 0)`;
+const amountSum = sql<string>`coalesce(sum(${lineAmount}), 0)`;
+const unreviewedSum = sql<string>`coalesce(sum(${lineAmount}) filter (where ${transaction.needsReview}), 0)`;
+/** transactions, not lines (a transaction split in two is still one purchase) */
+const txCount = sql<number>`count(distinct ${transaction.id})::int`;
 const monthOf = sql<string>`to_char(${transaction.purchaseDate}, 'YYYY-MM')`;
 
 // --- month totals ---
@@ -88,10 +97,11 @@ export async function monthlySeries(db: Db, f: Filters, first: string, last: str
       isIncome: sql<boolean>`${incomeIn()}`,
       total: amountSum,
       unreviewed: unreviewedSum,
-      unreviewedCount: sql<number>`(count(*) filter (where ${transaction.needsReview}))::int`,
-      count: sql<number>`count(*)::int`,
+      unreviewedCount: sql<number>`(count(distinct ${transaction.id}) filter (where ${transaction.needsReview}))::int`,
+      count: txCount,
     })
     .from(transaction)
+    .leftJoin(transactionSplit, linesOn(f))
     .where(and(base(f, from, to), inArray(transaction.kind, [...SPENDING, ...INCOME])))
     .groupBy(monthOf, sql`2`); // 2 = isIncome
 
@@ -147,10 +157,10 @@ async function categoryTotals(db: Db, where: SQL, sign: 1n | -1n) {
       nameEn: category.nameEn,
       month: monthOf,
       total: sql<string>`coalesce(sum(${lineAmount}), 0)`,
-      count: sql<number>`count(distinct ${transaction.id})::int`,
+      count: txCount,
     })
     .from(transaction)
-    .leftJoin(transactionSplit, splitJoin)
+    .leftJoin(transactionSplit, splitJoin) // always by line: a breakdown by category
     .leftJoin(category, eq(category.id, lineCategoryId))
     .where(where)
     .groupBy(category.slug, category.nameHe, category.nameEn, monthOf);
@@ -213,8 +223,9 @@ export interface MerchantRow {
 export async function merchantBreakdown(db: Db, f: Filters, month: string, limit = 10): Promise<MerchantRow[]> {
   const prev = shiftMonth(month, -1);
   const rows = await db
-    .select({ merchantId: merchant.id, name: merchant.name, month: monthOf, total: spentSum, count: sql<number>`count(*)::int` })
+    .select({ merchantId: merchant.id, name: merchant.name, month: monthOf, total: spentSum, count: txCount })
     .from(transaction)
+    .leftJoin(transactionSplit, linesOn(f))
     .innerJoin(merchant, eq(merchant.id, transaction.merchantId))
     .where(and(spendingWhere(f, monthRange(prev).from, monthRange(month).to), detailsVisible(f)))
     .groupBy(merchant.id, merchant.name, monthOf);
@@ -242,6 +253,7 @@ export async function dailySpending(db: Db, f: Filters, month: string): Promise<
   const rows = await db
     .select({ date: sql<string>`${transaction.purchaseDate}::text`, total: spentSum })
     .from(transaction)
+    .leftJoin(transactionSplit, linesOn(f))
     .where(spendingWhere(f, from, to))
     .groupBy(transaction.purchaseDate);
   const byDay = new Map(rows.map((r) => [r.date, minor(r.total)]));
@@ -278,6 +290,7 @@ export async function cashFlow(db: Db, f: Filters, first: string, last: string):
   const rows = await db
     .select({ month: monthOf, kind: transaction.kind, isIncome: sql<boolean>`${incomeIn()}`, total: amountSum })
     .from(transaction)
+    .leftJoin(transactionSplit, linesOn(f))
     .where(base(f, from, to))
     .groupBy(monthOf, transaction.kind, sql`3`); // 3 = isIncome
   const out = new Map(
@@ -336,7 +349,8 @@ export interface TransactionQuery {
 export async function listTransactions(db: Db, f: Filters, q: TransactionQuery) {
   const side = q.side ?? "all";
   if (q.billId) q = { ...q, from: "0001-01-01", to: "9999-12-31" };
-  const byLine = q.category !== undefined || q.lines === true;
+  // a member's view shows that member's part of a transaction split between people
+  const byLine = q.category !== undefined || q.lines === true || f.memberId !== undefined;
   const categoryOf = byLine ? lineCategoryId : transaction.categoryId;
   const amountOf = byLine ? lineAmount : transaction.amount;
   const where = and(
@@ -372,8 +386,9 @@ export async function listTransactions(db: Db, f: Filters, q: TransactionQuery) 
       accountName: account.name,
       merchantId: transaction.merchantId,
       cardBillId: transaction.cardBillId,
-      memberId: transaction.memberId,
-      isShared: transaction.isShared,
+      // a split part's own owner (a part without one is shared)
+      memberId: sql<string | null>`${lineMemberId}`,
+      isShared: sql<boolean>`(case when ${transactionSplit.id} is null then ${transaction.isShared} else ${transactionSplit.memberId} is null end)`,
       postingDate: transaction.postingDate,
       isSplitPart: byLine ? sql<boolean>`${transactionSplit.id} is not null` : sql<boolean>`false`,
     })
@@ -393,10 +408,11 @@ export async function listTransactions(db: Db, f: Filters, q: TransactionQuery) 
 export async function largestTransactions(db: Db, f: Filters, month: string, limit = 5) {
   const { from, to } = monthRange(month);
   return db
-    .select({ id: transaction.id, purchaseDate: transaction.purchaseDate, description: transaction.descriptionRaw, amount: transaction.amount, kind: transaction.kind, needsReview: transaction.needsReview })
+    .select({ id: transaction.id, purchaseDate: transaction.purchaseDate, description: transaction.descriptionRaw, amount: sql<bigint>`${lineAmount}`.mapWith(BigInt), kind: transaction.kind, needsReview: transaction.needsReview })
     .from(transaction)
+    .leftJoin(transactionSplit, linesOn(f))
     .where(and(base(f, from, to), inArray(transaction.kind, [...SPENDING, ...INCOME]), detailsVisible(f)))
-    .orderBy(desc(sql`abs(${transaction.amount})`))
+    .orderBy(desc(sql`abs(${lineAmount})`))
     .limit(limit);
 }
 

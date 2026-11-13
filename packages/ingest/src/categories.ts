@@ -2,7 +2,7 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { INCOME_KINDS, SPENDING_KINDS } from "@ft/core";
-import { auditLog, budget, categorizationRule, category, goal, merchant, transaction, transactionSplit, type Db } from "@ft/db";
+import { auditLog, budget, categorizationRule, category, goal, householdMember, merchant, transaction, transactionSplit, type Db } from "@ft/db";
 import { ImportError } from "./import.js";
 
 type TxDb = Db & { transaction: <T>(fn: (tx: Db) => Promise<T>) => Promise<T> };
@@ -105,12 +105,15 @@ export interface SplitPart {
   amountMinor: bigint;
   /** category slug, or null for uncategorized */
   category: string | null;
+  /** whose part it is: a member id, null for shared; omitted = the transaction's owner */
+  member?: string | null;
 }
 
 /**
- * Splits a transaction across categories (an empty list removes the split). The parts must add up
- * to the transaction exactly; category totals, budgets and drill-downs then count each part in
- * its own category. The transaction keeps the largest part's category as its label.
+ * Splits a transaction across categories and/or people (an empty list removes the split). The
+ * parts must add up to the transaction exactly; category figures then count each part in its own
+ * category, and each member's view counts that member's parts. The transaction keeps the largest
+ * part's category as its label.
  */
 export async function setSplits(db: TxDb, input: { householdId: string; transactionId: string; parts: SplitPart[]; actorMemberId?: string }) {
   return db.transaction(async (tx) => {
@@ -135,11 +138,17 @@ export async function setSplits(db: TxDb, input: { householdId: string; transact
     const want = spending ? "expense" : "income";
     if (cats.length !== slugs.length || cats.some((c) => c.type !== want)) throw new ImportError("bad_state", "Choose categories that fit the transaction");
     const idOf = new Map(cats.map((c) => [c.slug, c.id]));
+    const memberIds = [...new Set(input.parts.map((p) => p.member).filter((m): m is string => typeof m === "string"))];
+    if (memberIds.length) {
+      const found = await tx.select({ id: householdMember.id }).from(householdMember).where(and(eq(householdMember.householdId, householdId), inArray(householdMember.id, memberIds)));
+      if (found.length !== memberIds.length) throw new ImportError("not_found", "Member not found");
+    }
+    const ownerOf = (p: SplitPart) => (p.member === undefined ? (t.isShared ? null : t.memberId) : p.member);
     const sign = t.amount < 0n ? -1n : 1n;
 
     await tx.delete(transactionSplit).where(eq(transactionSplit.transactionId, t.id));
     await tx.insert(transactionSplit).values(
-      input.parts.map((p) => ({ householdId, transactionId: t.id, amount: p.amountMinor * sign, categoryId: p.category ? idOf.get(p.category)! : null, memberId: t.memberId })),
+      input.parts.map((p) => ({ householdId, transactionId: t.id, amount: p.amountMinor * sign, categoryId: p.category ? idOf.get(p.category)! : null, memberId: ownerOf(p) })),
     );
     const largest = [...input.parts].sort((a, b) => (b.amountMinor > a.amountMinor ? 1 : b.amountMinor < a.amountMinor ? -1 : 0))[0]!;
     await tx
@@ -156,20 +165,20 @@ export async function setSplits(db: TxDb, input: { householdId: string; transact
         updatedAt: new Date(),
       })
       .where(eq(transaction.id, t.id));
-    await audit(tx, householdId, input.actorMemberId, "transaction", t.id, "split", input.parts.map((p) => ({ amount: p.amountMinor.toString(), category: p.category })));
+    await audit(tx, householdId, input.actorMemberId, "transaction", t.id, "split", input.parts.map((p) => ({ amount: p.amountMinor.toString(), category: p.category, member: ownerOf(p) })));
   });
 }
 
 /** The parts of split transactions, by transaction id. */
 export async function splitsOf(db: Db, householdId: string, transactionIds: string[]) {
-  const out = new Map<string, { amountMinor: bigint; categorySlug: string | null; categoryName: string | null }[]>();
+  const out = new Map<string, { amountMinor: bigint; categorySlug: string | null; categoryName: string | null; memberId: string | null }[]>();
   if (!transactionIds.length) return out;
   const rows = await db
-    .select({ transactionId: transactionSplit.transactionId, amount: transactionSplit.amount, slug: category.slug, name: category.nameHe })
+    .select({ transactionId: transactionSplit.transactionId, amount: transactionSplit.amount, slug: category.slug, name: category.nameHe, memberId: transactionSplit.memberId })
     .from(transactionSplit)
     .leftJoin(category, eq(category.id, transactionSplit.categoryId))
     .where(and(eq(transactionSplit.householdId, householdId), inArray(transactionSplit.transactionId, transactionIds)))
     .orderBy(sql`abs(${transactionSplit.amount}) desc`);
-  for (const r of rows) out.set(r.transactionId, [...(out.get(r.transactionId) ?? []), { amountMinor: r.amount, categorySlug: r.slug, categoryName: r.name }]);
+  for (const r of rows) out.set(r.transactionId, [...(out.get(r.transactionId) ?? []), { amountMinor: r.amount, categorySlug: r.slug, categoryName: r.name, memberId: r.memberId }]);
   return out;
 }
