@@ -6,6 +6,7 @@
 #   ./start.sh backup   save an encrypted backup of the database and statements to backups/
 #   ./start.sh restore <file>   replace all data with a backup (asks first)
 #   ./start.sh schedule-backups   back up every night at 03:00 (macOS; prints a cron line elsewhere)
+#   ./start.sh phone    open the app from your phone over Tailscale (private HTTPS); "phone off" stops it
 # NO_OPEN=1 skips opening the browser.
 set -euo pipefail
 
@@ -124,6 +125,42 @@ PLIST
   fi
 }
 
+# set KEY=value in .env (replacing an existing line)
+set_env() {
+  if grep -q "^$1=" .env; then
+    sed -i.bak "s|^$1=.*|$1=$2|" .env && rm -f .env.bak
+  else
+    printf '%s=%s\n' "$1" "$2" >> .env
+  fi
+}
+
+# Phone access through Tailscale: a private network between your own devices. `tailscale serve`
+# gives this computer an HTTPS address reachable only from devices signed in to your Tailscale
+# account, and forwards it to the app, which keeps listening on this computer only.
+tailscale_cli() {
+  if command -v tailscale >/dev/null 2>&1; then command -v tailscale
+  elif [ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]; then echo /Applications/Tailscale.app/Contents/MacOS/Tailscale
+  else return 1
+  fi
+}
+phone() {
+  local ts name
+  ts=$(tailscale_cli) || die "Tailscale isn't installed. Install it on this computer and on your phone (https://tailscale.com/download), sign in to the same account on both, then run ./start.sh phone again."
+  if [ "${1:-}" = "off" ]; then
+    "$ts" serve --https=443 off >/dev/null 2>&1 || true
+    set_env ALLOWED_ORIGINS ""
+    say "Phone access stopped. Restart the app (Ctrl+C, then ./start.sh) to apply."
+    return
+  fi
+  "$ts" status >/dev/null 2>&1 || die "Tailscale is installed but not connected. Open it, sign in, and try again."
+  name=$("$ts" status --json | node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>console.log(((JSON.parse(s).Self||{}).DNSName||"").replace(/\.$/,"")))')
+  [ -n "$name" ] || die "Couldn't read this computer's Tailscale name. Turn on MagicDNS in the Tailscale admin console (DNS page) and try again."
+  "$ts" serve --bg "http://127.0.0.1:${PORT:-3000}" || die "Tailscale couldn't set up HTTPS. In the Tailscale admin console (DNS page) turn on MagicDNS and HTTPS certificates, then try again."
+  set_env ALLOWED_ORIGINS "$name"
+  say "On your phone (Tailscale on, same account), open: https://$name"
+  say "Restart the app now (Ctrl+C, then ./start.sh) so it accepts that address. To stop: ./start.sh phone off"
+}
+
 case "${1:-start}" in
   stop)
     say "Stopping the database"
@@ -155,8 +192,14 @@ case "${1:-start}" in
     schedule_backups
     exit 0
     ;;
+  phone)
+    load_env
+    need node "https://nodejs.org (version 22 or newer)"
+    phone "${2:-}"
+    exit 0
+    ;;
   start) ;;
-  *) die "Unknown command: $1 (use start, stop, reset, backup, restore or schedule-backups)" ;;
+  *) die "Unknown command: $1 (use start, stop, reset, backup, restore, schedule-backups or phone)" ;;
 esac
 
 need node "https://nodejs.org (version 22 or newer)"

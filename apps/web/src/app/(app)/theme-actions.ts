@@ -4,9 +4,8 @@ import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { appUser } from "@ft/db";
-import { requireViewer } from "@/lib/auth";
+import { requireViewer, secureCookies } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { env } from "@/lib/env";
 import { LOCALE_COOKIE, LOCALES, type Locale } from "@/lib/locale";
 import { THEMES, type Theme } from "@/lib/theme";
 
@@ -25,6 +24,6 @@ export async function setLocaleAction(form: FormData): Promise<void> {
   const locale = form.get("locale");
   if (!LOCALES.includes(locale as Locale)) return;
   await db().update(appUser).set({ locale: locale as Locale, updatedAt: new Date() }).where(eq(appUser.id, viewer.userId));
-  (await cookies()).set(LOCALE_COOKIE, locale as Locale, { httpOnly: true, sameSite: "lax", secure: env.cookieSecure, path: "/", maxAge: 400 * 86_400 });
+  (await cookies()).set(LOCALE_COOKIE, locale as Locale, { httpOnly: true, sameSite: "lax", secure: await secureCookies(), path: "/", maxAge: 400 * 86_400 });
   revalidatePath("/", "layout");
 }

@@ -24,6 +24,16 @@ export async function clientKey(): Promise<string> {
   return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "local";
 }
 
+/**
+ * Cookies get the Secure flag when configured, and whenever the request itself came over HTTPS
+ * (e.g. through the private address of ./start.sh phone) while the app also serves plain http
+ * on localhost.
+ */
+export async function secureCookies(): Promise<boolean> {
+  if (env.cookieSecure) return true;
+  return (await headers()).get("x-forwarded-proto")?.split(",")[0]?.trim() === "https";
+}
+
 export async function startSession(userId: string, totpVerified = false): Promise<void> {
   const { token, tokenHash } = newSessionToken();
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
@@ -31,7 +41,7 @@ export async function startSession(userId: string, totpVerified = false): Promis
   (await cookies()).set(COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: env.cookieSecure,
+    secure: await secureCookies(),
     path: "/",
     expires: expiresAt,
   });

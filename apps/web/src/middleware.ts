@@ -11,4 +11,5 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/((?!_next/|fonts/|favicon.ico).*)"] };
+// static files (fonts, icons, the web app manifest) are public: a phone fetches them before signing in
+export const config = { matcher: ["/((?!_next/|fonts/|favicon.ico|icon|apple-icon|manifest.webmanifest).*)"] };
