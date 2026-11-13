@@ -321,6 +321,8 @@ export interface TransactionQuery {
   accountId?: string;
   /** the rows itemized on one card bill, whatever their dates (from/to are then ignored) */
   billId?: string;
+  /** one row per split part (as with a category filter), e.g. for an export */
+  lines?: boolean;
   search?: string;
   limit?: number;
   offset?: number;
@@ -334,7 +336,7 @@ export interface TransactionQuery {
 export async function listTransactions(db: Db, f: Filters, q: TransactionQuery) {
   const side = q.side ?? "all";
   if (q.billId) q = { ...q, from: "0001-01-01", to: "9999-12-31" };
-  const byLine = q.category !== undefined;
+  const byLine = q.category !== undefined || q.lines === true;
   const categoryOf = byLine ? lineCategoryId : transaction.categoryId;
   const amountOf = byLine ? lineAmount : transaction.amount;
   const where = and(
@@ -370,6 +372,9 @@ export async function listTransactions(db: Db, f: Filters, q: TransactionQuery) 
       accountName: account.name,
       merchantId: transaction.merchantId,
       cardBillId: transaction.cardBillId,
+      memberId: transaction.memberId,
+      isShared: transaction.isShared,
+      postingDate: transaction.postingDate,
       isSplitPart: byLine ? sql<boolean>`${transactionSplit.id} is not null` : sql<boolean>`false`,
     })
     .from(transaction)
@@ -377,7 +382,8 @@ export async function listTransactions(db: Db, f: Filters, q: TransactionQuery) 
     .leftJoin(category, eq(category.id, categoryOf))
     .innerJoin(account, eq(account.id, transaction.accountId))
     .where(where)
-    .orderBy(desc(transaction.purchaseDate), asc(transaction.id))
+    // split parts of one transaction share its id: their own id keeps paging stable
+    .orderBy(desc(transaction.purchaseDate), asc(transaction.id), sql`${transactionSplit.id} asc nulls first`)
     .limit(q.limit ?? 100)
     .offset(q.offset ?? 0);
   return { rows, count: summary?.count ?? 0, totalMinor: minor(summary?.total) };

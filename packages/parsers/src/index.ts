@@ -45,3 +45,4 @@ export async function parseFile(file: InputFile): Promise<ParseResult> {
   const statement = matches[0]!.parse(content, file);
   return { statement, reconciliation: reconcile(statement) };
 }
+export { readXlsx, excelSerialToIso, type Sheet } from "./xlsx/reader.js";

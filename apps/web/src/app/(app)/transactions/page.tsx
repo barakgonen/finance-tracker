@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { billsForDebits, billSummary, listTransactions, monthRange, UNCATEGORIZED } from "@ft/analytics";
+import { billsForDebits, billSummary, listTransactions, monthRange, shiftMonth, UNCATEGORIZED } from "@ft/analytics";
 import { INCOME_KINDS, SPENDING_KINDS } from "@ft/core";
 import { splitsOf } from "@ft/ingest";
 import { householdScope, requireViewer } from "@/lib/auth";
@@ -171,6 +171,35 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
           </table>
         </div>
       </section>
+      {!bill && (
+        <details className="card">
+          <summary style={{ cursor: "pointer", fontWeight: 600 }}>{L("ייצוא לאקסל או CSV", "Export to Excel or CSV")}</summary>
+          <form method="get" action="/transactions/export" className="row" style={{ alignItems: "flex-end", marginBlockStart: 12 }}>
+            {period.view && <input type="hidden" name="view" value={period.view} />}
+            {Object.entries(keep).map(([k, v]) => (v && k !== "bill" ? <input key={k} type="hidden" name={k} value={v} /> : null))}
+            <div className="field-group" style={{ flex: "1 1 150px" }}>
+              <label htmlFor="ex-from">{L("מחודש", "From")}</label>
+              <select className="field" id="ex-from" name="from" defaultValue={period.month}>
+                {Array.from({ length: 60 }, (_, i) => shiftMonth(period.month, -i)).map((m) => <option key={m} value={m}>{monthName(m)}</option>)}
+              </select>
+            </div>
+            <div className="field-group" style={{ flex: "1 1 150px" }}>
+              <label htmlFor="ex-to">{L("עד חודש", "To")}</label>
+              <select className="field" id="ex-to" name="to" defaultValue={period.month}>
+                {Array.from({ length: 60 }, (_, i) => shiftMonth(period.month, -i)).map((m) => <option key={m} value={m}>{monthName(m)}</option>)}
+              </select>
+            </div>
+            <button className="btn primary" type="submit" name="format" value="xlsx">{L("הורדת אקסל", "Download Excel")}</button>
+            <button className="btn" type="submit" name="format" value="csv">CSV</button>
+            <p className="muted small" style={{ margin: 0, flexBasis: "100%" }}>
+              {L(
+                "הקובץ כולל את הסינון שבחרתם למעלה. תנועה מפוצלת מופיעה כשורה לכל חלק, כך שסכומים לפי קטגוריה באקסל יוצאים נכונים.",
+                "The file uses the filters chosen above. A split transaction appears as one row per part, so sums by category in Excel come out right.",
+              )}
+            </p>
+          </form>
+        </details>
+      )}
       {pages > 1 && (
         <nav className="row" aria-label={L("עמודים", "Pages")} style={{ justifyContent: "center" }}>
           {page > 1 && <Link className="btn" href={periodHref("/transactions", period, { ...keep, page: String(page - 1) })}>{L("הקודם", "Previous")}</Link>}

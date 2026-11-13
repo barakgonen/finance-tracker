@@ -60,6 +60,15 @@ describe("split transactions", () => {
     expect(all.totalMinor).toBe(-60000n);
   });
 
+  it("in lines mode (exports) every part is its own row and the rows add up to the month", async () => {
+    const all = await q((tx) => listTransactions(tx, F, { ...OCT, side: "spending", lines: true }));
+    expect(all.rows.map((r) => [r.description, r.amount, r.isSplitPart])).toEqual(
+      expect.arrayContaining([["שופרסל", -35000n, true], ["שופרסל", -15000n, true], ["WOLT", -10000n, false]]),
+    );
+    expect(all.rows).toHaveLength(3);
+    expect(all.totalMinor).toBe(-60000n);
+  });
+
   it("budgets count the part in their category", async () => {
     const [b] = await q((tx) => budgetsWithStatus(tx, F, "2026-10"));
     expect(b!.status.spentMinor).toBe(15000n);
